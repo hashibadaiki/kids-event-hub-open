@@ -1,1 +1,13 @@
-{ "name": "@kids-event-hub/core", "private": true, "type": "module", "main": "src/index.ts" }
+{
+  "name": "@kids-event-hub/core",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.0"
+  }
+}
