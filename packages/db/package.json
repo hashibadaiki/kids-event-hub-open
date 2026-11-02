@@ -5,8 +5,16 @@
   "main": "src/index.ts",
   "scripts": {
     "typecheck": "tsc -p .",
+    "test": "vitest run",
     "generate": "drizzle-kit generate"
   },
-  "dependencies": { "drizzle-orm": "^0.45.0" },
-  "devDependencies": { "drizzle-kit": "^0.31.0" }
+  "dependencies": {
+    "drizzle-orm": "^0.45.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@cloudflare/workers-types": "^5.20261101.1",
+    "drizzle-kit": "^0.31.0",
+    "vitest": "^4.1.12"
+  }
 }
