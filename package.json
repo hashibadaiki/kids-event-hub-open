@@ -2,7 +2,7 @@
   "name": "kids-event-hub-open",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.34.9",
+  "packageManager": "pnpm@11.28.9",
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
