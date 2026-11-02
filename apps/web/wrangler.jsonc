@@ -6,8 +6,7 @@
     {
       "binding": "DB",
       "database_name": "kids-event-hub",
-      // オーナー作業: `wrangler d1 create kids-event-hub` の出力 ID に差し替える
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "df666d2a-5dd8-4fdd-ae32-0910664efe80",
       "migrations_dir": "../../packages/db/migrations"
     }
   ]
