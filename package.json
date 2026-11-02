@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
-    "test": "pnpm -r --if-present test"
+    "test": "pnpm -r --if-present test && pnpm test:claude",
+    "test:claude": "node --test .claude/hooks/*.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
