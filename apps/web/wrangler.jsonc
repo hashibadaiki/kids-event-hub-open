@@ -1,0 +1,14 @@
+{
+  "name": "kids-event-hub",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kids-event-hub",
+      // オーナー作業: `wrangler d1 create kids-event-hub` の出力 ID に差し替える
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ]
+}
