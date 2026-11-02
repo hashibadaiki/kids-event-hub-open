@@ -1,0 +1,1 @@
+{ "name": "@kids-event-hub/core", "private": true, "type": "module", "main": "src/index.ts" }

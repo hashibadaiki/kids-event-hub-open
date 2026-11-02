@@ -13,9 +13,30 @@
 
 （TODO）PDF / HTML を Claude で構造化し、都道府県 × 日付で検索できるようにする。
 
+## 公開 URL
+
+https://kids-event-hub.hashiba-baan-daiki.workers.dev （`/healthz` で死活確認）
+
 ## 使い方
 
-（TODO）セットアップ、収集コマンド、検索サイト、MCP サーバーの使い方。
+（TODO）収集コマンド、検索サイト、MCP サーバーの使い方。
+
+### 開発
+
+```sh
+corepack enable          # pnpm 11
+pnpm install
+pnpm typecheck && pnpm lint && pnpm test
+cd apps/web && pnpm exec wrangler dev   # ローカル D1 で起動
+```
+
+デプロイ（オーナーのみ）:
+
+```sh
+cd apps/web
+pnpm exec wrangler d1 migrations apply kids-event-hub --remote
+pnpm exec wrangler deploy
+```
 
 ## アーキテクチャ
 

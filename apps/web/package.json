@@ -1,0 +1,21 @@
+{
+  "name": "@kids-event-hub/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kids-event-hub/db": "workspace:*",
+    "drizzle-orm": "^0.45.0",
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@cloudflare/workers-types": "^5.0.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.0.0"
+  }
+}
