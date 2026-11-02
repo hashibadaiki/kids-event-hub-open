@@ -190,7 +190,7 @@ describe("crawl_runs とダッシュボード指標", () => {
       ])
       .returning();
     await db.insert(crawlRuns).values([
-      { sourceId: src.id, configId: v1.id, status: "success", startedAt: "2026-11-01T00:00:00Z", finishedAt: "2026-11-01T00:00:10Z", durationMs: 10000, fetchedCount: 10, extractedCount: 6, dateFoundCount: 5 },
+      { sourceId: src.id, configId: v1.id, status: "success", startedAt: "2026-11-01T00:00:00Z", finishedAt: "2026-11-01T00:00:10Z", durationMs: 10000, fetchedCount: 10, extractedCount: 6, dateFoundCount: 3 },
       { sourceId: src.id, configId: v2.id, status: "success", startedAt: "2026-11-02T00:00:00Z", finishedAt: "2026-11-02T00:00:08Z", durationMs: 8000, fetchedCount: 10, extractedCount: 9, dateFoundCount: 9 },
     ]);
 
@@ -209,7 +209,7 @@ describe("crawl_runs とダッシュボード指標", () => {
       .orderBy(asc(extractionConfigs.version));
 
     expect(rows).toEqual([
-      { version: 1, runs: 1, extractionRate: 0.6, dateRate: 1, avgDurationMs: 10000 },
+      { version: 1, runs: 1, extractionRate: 0.6, dateRate: 0.5, avgDurationMs: 10000 },
       { version: 2, runs: 1, extractionRate: 0.9, dateRate: 1, avgDurationMs: 8000 },
     ]);
   });
