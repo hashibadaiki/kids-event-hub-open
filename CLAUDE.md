@@ -26,7 +26,8 @@ cd packages/db && pnpm generate           # スキーマ変更から migration �
 - インフラ操作は CLI（wrangler）のみ。ダッシュボードでの手作業はしない
 - 認証情報はチャット・ログに出さない。ログインはオーナーが手元のターミナルで `! wrangler login` を実行する
 - 開発は worktree で行う: `git worktree add ../kids-event-hub-issue-<番号> -b issue-<番号> origin/main`（1 issue = 1 worktree。クラウドの使い捨てセッションでは clone 自体が隔離環境なのでブランチを切るだけでよい）
-- マージ前に確認する: PR 本文に変更点・テスト結果・迷った点・オーナー作業を書き、オーナーが確認してからマージする
+- PR 本文に変更点・テスト結果・迷った点・オーナー作業を書く。CI がグリーンなら Claude が `gh pr merge --merge` でマージしてよい
+- デプロイと本番 D1 の migration は `main` 更新時に GitHub Actions（`.github/workflows/ci.yml` の `deploy` ジョブ）が自動で行う。手元からは実行しない
 - 下記「やらないこと」の一部は `.claude/hooks/guard-bash.mjs` が機械的に止める（`wrangler deploy` / `login` / `secret put` / リソース作成 / `--remote`、`main` への push）。止められたら回避せず、PR 本文の「オーナー作業」に書く
 
 ## 進め方
@@ -34,14 +35,14 @@ cd packages/db && pnpm generate           # スキーマ変更から migration �
 - 作業は GitHub の issue 単位。1 issue = 1 ブランチ `issue-<番号>` = 1 PR
 - `ready` ラベルの issue だけ着手する。ラベルはオーナーが付ける
 - issue の要件（ゴール）は変えない。緩めたくなったら issue にコメントして止まる
-- `main` には直接 push しない。PR のマージはオーナーが行う
+- `main` には直接 push しない（必ず PR 経由）
 - TDD で進める: 先に失敗するテストを書く（Red）→ 通す最小の実装（Green）→ リファクタ。テストのない PR は作らない
 - CI（typecheck → lint → test）がグリーンであることがマージ条件
 - テストはネットワークに出ない。外部サイトや Claude API は fixtures とモックで扱う
 
 ## やらないこと
 
-- `wrangler deploy` / `wrangler login` / `wrangler secret put` / Cloudflare リソースの作成（オーナーが手元で実行する。必要なら PR 本文に「オーナー作業」として書く）
+- 手元からの `wrangler deploy` / `wrangler login` / `wrangler secret put` / Cloudflare リソースの作成（デプロイは CI に任せる。それ以外はオーナーが手元で実行する。必要なら PR 本文に「オーナー作業」として書く）
 - API キー・トークン・個人情報をコード、コミット、ログ、PR、issue に書く
 - Web の公開投稿フォーム、ユーザー登録・ログイン、管理画面の自作
 

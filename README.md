@@ -30,13 +30,12 @@ pnpm typecheck && pnpm lint && pnpm test
 cd apps/web && pnpm exec wrangler dev   # ローカル D1 で起動
 ```
 
-デプロイ（オーナーのみ）:
+デプロイ: `main` が更新されると GitHub Actions が CI（typecheck → lint → test）の後に本番 D1 の migration 適用（`wrangler d1 migrations apply --remote`）とデプロイ（`wrangler deploy`）を自動で行います。
 
-```sh
-cd apps/web
-pnpm exec wrangler d1 migrations apply kids-event-hub --remote
-pnpm exec wrangler deploy
-```
+必要な GitHub の Secrets:
+
+- `CLOUDFLARE_API_TOKEN`: 権限「Workers Scripts: Edit」「D1: Edit」を付けた API トークン
+- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare のアカウント ID
 
 ## アーキテクチャ
 
