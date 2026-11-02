@@ -5,4 +5,8 @@ export default tseslint.config(
   { ignores: ["**/node_modules/**", "**/dist/**", "**/.wrangler/**", "**/migrations/**", "**/worker-configuration.d.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    files: [".claude/**/*.mjs"],
+    languageOptions: { globals: { process: "readonly", console: "readonly", URL: "readonly" } },
+  },
 );
