@@ -2,7 +2,7 @@ import type { ClaudeClient } from "../claude";
 import { absoluteUrl } from "./text";
 import type { RawEvent } from "./types";
 
-export const MAX_PDF_LINKS = 10;
+export const MAX_PDF_LINKS = 100;
 
 const SYSTEM = [
   "あなたは自治体・公共施設の PDF（チラシ・広報誌・月間カレンダー）から、子供向けイベントの情報を抜き出す担当です。",

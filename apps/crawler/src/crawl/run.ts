@@ -59,13 +59,32 @@ export type Collected = {
   raws: RawEvent[];
   skipped: string[];
   warnings: string[];
+  /** 一覧ページからたどって抽出できた PDF（URL と件数） */
+  pdfs?: { url: string; extracted: number }[];
+  /** 一覧ページからたどって取得・抽出に失敗した PDF。permanent は取得が 4xx（リンク切れなど）で、取り直しても直らない見込みのもの */
+  pdfFailures?: PdfFailure[];
+  /** 一覧ページに新しい PDF がなく、何も抽出しなかった */
+  nothingNew?: boolean;
 };
+
+/** PDF の一覧ページで、1 回のクロールで取得・抽出する新しい PDF の上限 */
+export const MAX_NEW_PDFS_PER_RUN = 5;
+/** 取得が 4xx でこの回数失敗した PDF は取り直さない（Claude や相手サイトの一時的な障害は数えない） */
+export const MAX_PDF_FAILURES = 3;
+
+type PdfFailure = { url: string; error: string; permanent: boolean };
 
 export type CollectOptions = {
   /** HTML の LLM 抽出に使う収集元の抽出設定 */
   config?: ExtractionConfig;
   /** PDF 以外の文書を取得したとき呼ぶ（自動改善ループの検証用の生データ保存） */
   onDocument?: (doc: FetchedDocument) => Promise<void>;
+  /** PDF の一覧ページで、抽出済み（またはあきらめた）ので読み直さない PDF の URL */
+  knownPdfs?: ReadonlySet<string>;
+  /** PDF の一覧ページで、前に失敗した PDF の URL。まだ試していない PDF の後に回す */
+  retryPdfs?: ReadonlySet<string>;
+  /** 1 回に取得・抽出する新しい PDF の上限 */
+  maxNewPdfs?: number;
 };
 
 /** 収集元を取得して抽出し、要約を付ける（DB には書かない）。途中で失敗したら例外。それまでの経過は progress に残る */
@@ -96,25 +115,44 @@ export async function collect(
     progress.type = "pdf";
     const links = findPdfLinks(doc.text, doc.url).filter((l) => new URL(l).host === url.host);
     if (links.length === 0) throw new CrawlError(`一覧ページ（${doc.url}）に PDF へのリンクが見つかりません`);
-    const claude = requireClaude(deps.claude, "PDF");
-    raws = [];
+    const allowed: { link: string; check: ReturnType<typeof checkRobots> }[] = [];
     for (const link of links) {
       const lu = new URL(link);
       const check = checkRobots(robotsRules, lu.pathname + lu.search, USER_AGENT);
-      if (!check.allowed) {
-        progress.skipped.push(`${link} は robots.txt（${robotsUrl}）の ${check.rule} で禁止のため取得しません`);
-        continue;
-      }
+      if (check.allowed) allowed.push({ link, check });
+      else progress.skipped.push(`${link} は robots.txt（${robotsUrl}）の ${check.rule} で禁止のため取得しません`);
+    }
+    if (allowed.length === 0) throw new CrawlError(progress.skipped.join(" / "));
+    const fresh = allowed.filter((a) => !options.knownPdfs?.has(a.link));
+    if (fresh.length === 0) {
+      progress.nothingNew = true;
+      progress.raws = [];
+      return progress;
+    }
+    const retry = (a: { link: string }) => (options.retryPdfs?.has(a.link) ? 1 : 0);
+    const ordered = [...fresh].sort((a, b) => retry(a) - retry(b));
+    const batch = ordered.slice(0, options.maxNewPdfs ?? MAX_NEW_PDFS_PER_RUN);
+    if (ordered.length > batch.length) progress.warnings.push(`新しい PDF のうち ${ordered.length - batch.length} 件は次回のクロールで取得します`);
+    const claude = requireClaude(deps.claude, "PDF");
+    raws = [];
+    progress.pdfs = [];
+    progress.pdfFailures = [];
+    for (const { link, check } of batch) {
       try {
-        await throttle.wait(lu.host, check.crawlDelaySec);
+        await throttle.wait(new URL(link).host, check.crawlDelaySec);
         const pdfDoc = await fetchDocument(link, { fetch: deps.fetch });
         progress.fetched++;
-        raws.push(...(await extractPdf(pdfDoc.bytes, pdfDoc.url, claude)));
+        const found = await extractPdf(pdfDoc.bytes, pdfDoc.url, claude);
+        raws.push(...found);
+        progress.pdfs.push({ url: link, extracted: found.length });
       } catch (e) {
-        progress.skipped.push(`${link} の取得・抽出に失敗（${e instanceof Error ? e.message : String(e)}）`);
+        const error = e instanceof Error ? e.message : String(e);
+        const permanent = e instanceof FetchError && e.status !== null && e.status >= 400 && e.status < 500;
+        progress.pdfFailures.push({ url: link, error, permanent });
+        progress.skipped.push(`${link} の取得・抽出に失敗（${error}）`);
       }
     }
-    if (raws.length === 0 && progress.skipped.length > 0) throw new CrawlError(progress.skipped.join(" / "));
+    if (progress.pdfs.length === 0) throw new CrawlError(progress.skipped.join(" / "));
   } else {
     await options.onDocument?.(doc);
     const extracted = await extractDocument(doc.text, doc.url, detected, declared, deps.claude, options.config);
@@ -157,15 +195,24 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
 
   try {
     const config = await ensureActiveConfig(db, source.id, startedAt);
+    const tried = await db
+      .prepare("SELECT url, status, fail_count FROM pdf_documents WHERE source_id = ?")
+      .bind(source.id)
+      .all<{ url: string; status: string; fail_count: number }>();
+    const done = tried.results.filter((r) => r.status === "extracted" || r.fail_count >= MAX_PDF_FAILURES);
     await db.prepare("UPDATE crawl_runs SET config_id = ? WHERE id = ?").bind(config.id, runId).run();
     await collect(source, deps, progress, {
       config: config.config,
+      knownPdfs: new Set(done.map((r) => r.url)),
+      retryPdfs: new Set(tried.results.filter((r) => !done.includes(r)).map((r) => r.url)),
       onDocument: async (doc) => {
         await saveRawDocument(db, { sourceId: source.id, runId, url: doc.url, contentType: doc.contentType, body: doc.text, fetchedAt: startedAt });
       },
     });
     result.extracted = progress.raws.length;
-    result.quality = scoreExtraction(progress.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt });
+    result.quality = progress.nothingNew
+      ? null
+      : scoreExtraction(progress.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt });
     const rows = progress.raws
       .map((r) => toEventRow(r, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt }))
       .filter((r): r is EventRow => r !== null);
@@ -181,6 +228,12 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     result.status = "failed";
     result.error = e instanceof Error ? e.message : String(e);
     if (e instanceof RobotsDisallowed) await rejectSource(db, source, e, startedAt);
+  }
+  try {
+    await recordPdfs(db, source.id, runId, result.status === "failed" ? [] : (progress.pdfs ?? []), progress.pdfFailures ?? [], startedAt);
+  } catch (e) {
+    const note = `PDF の取得結果を記録できませんでした（${e instanceof Error ? e.message : String(e)}）`;
+    result.error = result.error ? `${result.error} / ${note}` : note;
   }
   result.type = progress.type;
   const fetched = progress.fetched;
@@ -205,6 +258,40 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     )
     .run();
   return result;
+}
+
+/** 一覧ページからたどった PDF の結果を記録する。抽出済みは次回から読まない。失敗は回数を数える */
+async function recordPdfs(
+  db: D1Database,
+  sourceId: number,
+  runId: number,
+  extracted: { url: string; extracted: number }[],
+  failed: PdfFailure[],
+  at: Date,
+) {
+  const statements = [
+    ...extracted.map((p) =>
+      db
+        .prepare(
+          `INSERT INTO pdf_documents (source_id, crawl_run_id, url, status, extracted_count, last_error, last_tried_at)
+           VALUES (?, ?, ?, 'extracted', ?, NULL, ?)
+           ON CONFLICT (source_id, url) DO UPDATE SET crawl_run_id = excluded.crawl_run_id, status = 'extracted',
+             extracted_count = excluded.extracted_count, last_error = NULL, last_tried_at = excluded.last_tried_at`,
+        )
+        .bind(sourceId, runId, p.url, p.extracted, at.toISOString()),
+    ),
+    ...failed.map((p) =>
+      db
+        .prepare(
+          `INSERT INTO pdf_documents (source_id, crawl_run_id, url, status, fail_count, last_error, last_tried_at)
+           VALUES (?, ?, ?, 'failed', ?, ?, ?)
+           ON CONFLICT (source_id, url) DO UPDATE SET crawl_run_id = excluded.crawl_run_id, status = 'failed',
+             fail_count = pdf_documents.fail_count + excluded.fail_count, last_error = excluded.last_error, last_tried_at = excluded.last_tried_at`,
+        )
+        .bind(sourceId, runId, p.url, p.permanent ? 1 : 0, p.error, at.toISOString()),
+    ),
+  ];
+  if (statements.length > 0) await db.batch(statements);
 }
 
 async function rejectSource(db: D1Database, source: SourceRow, e: RobotsDisallowed, at: Date) {
