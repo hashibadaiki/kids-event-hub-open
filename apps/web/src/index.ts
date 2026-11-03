@@ -1,7 +1,4 @@
 import { createApp } from "./app";
-import { createMemoryRepository } from "./repository";
+import { createD1Repository } from "./d1-repository";
 
-// TODO(#5): events テーブルが入ったら D1 実装に差し替える。今は空のデータで動かす
-const empty = createMemoryRepository([]);
-
-export default createApp({ repository: () => empty });
+export default createApp({ repository: (env) => createD1Repository(env.DB) });
