@@ -4,6 +4,7 @@ import { extractHtml } from "../extract/html";
 import { extractIcal } from "../extract/ical";
 import { extractJsonLd } from "../extract/jsonld";
 import { extractRss } from "../extract/rss";
+import { summarizeEvents } from "../extract/summarize";
 import type { RawEvent } from "../extract/types";
 import { detectType } from "./detect";
 import { fetchDocument, FetchError, HostThrottle, isDue, USER_AGENT } from "./fetch";
@@ -80,9 +81,17 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
 
     const detected = detectType({ contentType: doc.contentType, url: doc.url, body: doc.text });
     result.type = detected;
-    const { type, raws } = await extract(doc.text, doc.url, detected, String(source.type ?? ""), deps.claude);
-    result.type = type;
-    result.extracted = raws.length;
+    const extracted = await extract(doc.text, doc.url, detected, String(source.type ?? ""), deps.claude);
+    result.type = extracted.type;
+    result.extracted = extracted.raws.length;
+    let raws = extracted.raws;
+    if (deps.claude) {
+      try {
+        raws = await summarizeEvents(raws, deps.claude);
+      } catch (e) {
+        result.error = `要約を作れなかったため要約なしで保存しました（${e instanceof Error ? e.message : String(e)}）`;
+      }
+    }
 
     const rows = raws
       .map((r) => toEventRow(r, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt }))

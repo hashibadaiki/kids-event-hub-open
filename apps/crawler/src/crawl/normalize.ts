@@ -10,9 +10,6 @@ import type { RawEvent } from "../extract/types";
 
 export type EventRow = Omit<typeof events.$inferInsert, "id" | "sourceId" | "crawlRunId" | "createdAt" | "updatedAt">;
 
-/** 要約がないときに説明文から残す長さ（本文は転載しない） */
-export const SUMMARY_MAX_CHARS = 80;
-
 /** 重複キー: 都道府県 + 開催日 + 比較用に正規化したタイトル */
 export function dedupKeyOf(prefecture: string, startAt: string, title: string): string {
   return `${prefecture}|${startAt.slice(0, 10)}|${normalizeForCompare(title)}`;
@@ -46,7 +43,7 @@ export function toEventRow(
 
   return {
     title,
-    summary: raw.summary ?? shorten(raw.description),
+    summary: raw.summary ?? null,
     startAt,
     endAt: endAt && endAt !== startAt ? endAt : null,
     allDay,
@@ -66,10 +63,4 @@ export function toEventRow(
     sourceUrl: raw.url ?? ctx.sourceUrl,
     dedupKey: dedupKeyOf(ctx.prefecture, startAt, title),
   };
-}
-
-function shorten(text: string | null | undefined): string | null {
-  if (!text) return null;
-  const t = text.replace(/\s+/g, " ").trim();
-  return t.length <= SUMMARY_MAX_CHARS ? t : `${t.slice(0, SUMMARY_MAX_CHARS)}…`;
 }
