@@ -1,0 +1,20 @@
+# 収集元の一覧（オーナーが管理する入口）。正は D1 の sources テーブルで、このファイルはその入口の一つ。
+# 反映: pnpm sync-sources（ローカル D1）/ pnpm sync-sources --remote（本番。オーナーが実行）
+# 追加: Claude Code で /add-source <URL>（.claude/skills/add-source/SKILL.md）
+#
+# 書き方:
+#   - name: 高松市こども未来館          # 必須。収集元の名前
+#     url: https://example.jp/events.pdf  # 必須。http(s)。重複不可
+#     prefecture: 香川県                 # 必須。都道府県の正式名
+#     type: pdf                          # 任意。jsonld / ical / rss / html / pdf / llm。省略時は URL から推測
+#     enabled: true                      # 任意。false でクロール停止（行は残る）
+#     note: 毎月 1 日に更新              # 任意。メモ（D1 には入れない）
+#     policy:                            # 任意。robots.txt・利用規約の確認結果
+#       status: ok                       #   ok / caution / ng（ng はクロールしない）
+#       checked_at: "2026-11-03"
+#       note: robots.txt に禁止なし。規約 https://...
+#
+# ファイルから消した行は D1 で削除されず enabled = false になる。
+# 施設管理者など他の入口から入った行（submitted_by が owner 以外）は同期で触らない。
+
+sources: []
