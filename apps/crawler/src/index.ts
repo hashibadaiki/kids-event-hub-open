@@ -12,3 +12,7 @@ export { extractJsonLd } from "./extract/jsonld";
 export { extractIcal } from "./extract/ical";
 export { extractRss } from "./extract/rss";
 export { extractHtml, htmlToText } from "./extract/html";
+export { parseExtractionConfig, type ExtractionConfig } from "./extract/config";
+export * from "./improve/quality";
+export * from "./improve/configs";
+export { improveSource, improveLowQuality, type ImproveResult } from "./improve/improve";

@@ -1,5 +1,6 @@
 import { isDuplicate } from "@kids-event-hub/core";
 import type { ClaudeClient } from "../claude";
+import type { ExtractionConfig } from "../extract/config";
 import { extractHtml } from "../extract/html";
 import { extractIcal } from "../extract/ical";
 import { extractJsonLd } from "../extract/jsonld";
@@ -7,8 +8,10 @@ import { extractPdf, findPdfLinks } from "../extract/pdf";
 import { extractRss } from "../extract/rss";
 import { summarizeEvents } from "../extract/summarize";
 import type { RawEvent } from "../extract/types";
+import { ensureActiveConfig, saveRawDocument } from "../improve/configs";
+import { scoreExtraction, type QualityReport } from "../improve/quality";
 import { detectType } from "./detect";
-import { fetchDocument, FetchError, HostThrottle, isDue, USER_AGENT } from "./fetch";
+import { fetchDocument, FetchError, HostThrottle, isDue, USER_AGENT, type FetchedDocument } from "./fetch";
 import { toEventRow, type EventRow } from "./normalize";
 import { checkRobots, parseRobots, type Robots } from "./robots";
 
@@ -34,6 +37,8 @@ export type CrawlResult = {
   dateFound: number;
   upserted: number;
   duplicates: number;
+  /** 抽出品質。取得・抽出に失敗して採点できなかったら null */
+  quality: QualityReport | null;
   error: string | null;
 };
 
@@ -56,11 +61,19 @@ export type Collected = {
   warnings: string[];
 };
 
+export type CollectOptions = {
+  /** HTML の LLM 抽出に使う収集元の抽出設定 */
+  config?: ExtractionConfig;
+  /** PDF 以外の文書を取得したとき呼ぶ（自動改善ループの検証用の生データ保存） */
+  onDocument?: (doc: FetchedDocument) => Promise<void>;
+};
+
 /** 収集元を取得して抽出し、要約を付ける（DB には書かない）。途中で失敗したら例外。それまでの経過は progress に残る */
 export async function collect(
   source: { url: string; type?: unknown },
   deps: CrawlDeps,
   progress: Collected = { type: null, fetched: 0, raws: [], skipped: [], warnings: [] },
+  options: CollectOptions = {},
 ): Promise<Collected> {
   const throttle = deps.throttle ?? new HostThrottle({ now: () => deps.now().getTime(), sleep: deps.sleep });
   const url = new URL(source.url);
@@ -103,7 +116,8 @@ export async function collect(
     }
     if (raws.length === 0 && progress.skipped.length > 0) throw new CrawlError(progress.skipped.join(" / "));
   } else {
-    const extracted = await extract(doc.text, doc.url, detected, declared, deps.claude);
+    await options.onDocument?.(doc);
+    const extracted = await extractDocument(doc.text, doc.url, detected, declared, deps.claude, options.config);
     progress.type = extracted.type;
     raws = extracted.raws;
   }
@@ -136,13 +150,22 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     dateFound: 0,
     upserted: 0,
     duplicates: 0,
+    quality: null,
     error: null,
   };
   const progress: Collected = { type: null, fetched: 0, raws: [], skipped: [], warnings: [] };
 
   try {
-    await collect(source, deps, progress);
+    const config = await ensureActiveConfig(db, source.id, startedAt);
+    await db.prepare("UPDATE crawl_runs SET config_id = ? WHERE id = ?").bind(config.id, runId).run();
+    await collect(source, deps, progress, {
+      config: config.config,
+      onDocument: async (doc) => {
+        await saveRawDocument(db, { sourceId: source.id, runId, url: doc.url, contentType: doc.contentType, body: doc.text, fetchedAt: startedAt });
+      },
+    });
     result.extracted = progress.raws.length;
+    result.quality = scoreExtraction(progress.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt });
     const rows = progress.raws
       .map((r) => toEventRow(r, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt }))
       .filter((r): r is EventRow => r !== null);
@@ -166,7 +189,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
   await db
     .prepare(
       `UPDATE crawl_runs SET status = ?, finished_at = ?, duration_ms = ?, fetched_count = ?, extracted_count = ?,
-         date_found_count = ?, upserted_count = ?, error_message = ? WHERE id = ?`,
+         date_found_count = ?, upserted_count = ?, quality_score = ?, error_message = ? WHERE id = ?`,
     )
     .bind(
       result.status,
@@ -176,6 +199,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
       result.extracted,
       result.dateFound,
       result.upserted,
+      result.quality?.score ?? null,
       result.error,
       runId,
     )
@@ -210,14 +234,18 @@ function requireClaude(claude: ClaudeClient | null, what: string): ClaudeClient 
   return claude;
 }
 
-async function extract(
+/** 取得した文書から抽出する。HTML の LLM 抽出には収集元の抽出設定（config）を使う */
+export async function extractDocument(
   text: string,
   url: string,
-  detected: Exclude<ReturnType<typeof detectType>, "pdf">,
+  detected: ReturnType<typeof detectType>,
   declared: string,
   claude: ClaudeClient | null,
+  config: ExtractionConfig = {},
 ): Promise<{ type: string; raws: RawEvent[] }> {
   switch (detected) {
+    case "pdf":
+      throw new CrawlError("PDF は保存した生データからの再抽出に対応していません");
     case "ical":
       return { type: "ical", raws: extractIcal(text) };
     case "rss":
@@ -225,16 +253,16 @@ async function extract(
     case "jsonld": {
       const raws = extractJsonLd(text, url);
       if (raws.length > 0) return { type: "jsonld", raws };
-      return { type: "llm", raws: await llm(text, url, claude) };
+      return { type: "llm", raws: await llm(text, url, claude, config) };
     }
     case "html":
       // JSON-LD / iCal / RSS のつもりで登録したのに普通の HTML だった → LLM フォールバック
-      return { type: declared === "html" ? "html" : "llm", raws: await llm(text, url, claude) };
+      return { type: declared === "html" ? "html" : "llm", raws: await llm(text, url, claude, config) };
   }
 }
 
-async function llm(html: string, url: string, claude: ClaudeClient | null): Promise<RawEvent[]> {
-  return extractHtml(html, url, requireClaude(claude, "HTML"));
+async function llm(html: string, url: string, claude: ClaudeClient | null, config: ExtractionConfig): Promise<RawEvent[]> {
+  return extractHtml(html, url, requireClaude(claude, "HTML"), config);
 }
 
 type Existing = { source_id: number; dedup_key: string; title: string; start_at: string; venue: string | null };

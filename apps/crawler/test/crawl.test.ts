@@ -259,6 +259,18 @@ describe("crawlSource", () => {
     ]);
   });
 
+  it("PDF も品質を採点して記録するが、生データ（バイナリ）は自動改善用に保存しない", async () => {
+    const id = await addSource("https://example.jp/dayori.pdf", "pdf");
+    const claude = { callTool: vi.fn(async () => ({ events: pdfEvents })) } satisfies ClaudeClient;
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/dayori.pdf": pdfResponse() }, claude));
+    expect(r.quality).not.toBeNull();
+    const run = await env.DB.prepare("SELECT quality_score, config_id FROM crawl_runs WHERE id = ?").bind(r.runId).first<{ quality_score: number | null; config_id: number | null }>();
+    expect(run?.quality_score).toBe(r.quality!.score);
+    expect(run?.config_id).not.toBeNull();
+    const raw = await env.DB.prepare("SELECT count(*) AS n FROM raw_documents WHERE source_id = ?").bind(id).first<{ n: number }>();
+    expect(raw?.n).toBe(0);
+  });
+
   it("PDF の収集元が HTML の一覧ページなら、同じホストの PDF リンクをたどる（robots.txt で禁止された PDF は取らない）", async () => {
     const id = await addSource("https://example.jp/kodomo/", "pdf");
     const listing = `<a href="/files/a.pdf">A</a><a href="/private/b.pdf">B</a><a href="https://other.example.com/c.pdf">C</a>`;
