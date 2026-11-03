@@ -2,8 +2,10 @@
 
 export type ToolSpec = { name: string; description: string; inputSchema: Record<string, unknown> };
 
+export type DocumentInput = { mediaType: "application/pdf"; base64: string };
+
 export type ClaudeClient = {
-  callTool(args: { system: string; prompt: string; tool: ToolSpec; maxTokens?: number }): Promise<unknown>;
+  callTool(args: { system: string; prompt: string; tool: ToolSpec; maxTokens?: number; document?: DocumentInput }): Promise<unknown>;
 };
 
 /** 既定のモデル。環境変数 CLAUDE_MODEL で上書きできる */
@@ -14,7 +16,13 @@ export function createClaudeClient(opts: { apiKey: string; model?: string; fetch
   const doFetch = opts.fetch ?? fetch;
   const model = opts.model ?? DEFAULT_MODEL;
   return {
-    async callTool({ system, prompt, tool, maxTokens = 8192 }) {
+    async callTool({ system, prompt, tool, maxTokens = 8192, document }) {
+      const content = document
+        ? [
+            { type: "document", source: { type: "base64", media_type: document.mediaType, data: document.base64 } },
+            { type: "text", text: prompt },
+          ]
+        : prompt;
       const res = await doFetch(API_URL, {
         method: "POST",
         headers: {
@@ -28,7 +36,7 @@ export function createClaudeClient(opts: { apiKey: string; model?: string; fetch
           system,
           tools: [{ name: tool.name, description: tool.description, input_schema: tool.inputSchema }],
           tool_choice: { type: "tool", name: tool.name },
-          messages: [{ role: "user", content: prompt }],
+          messages: [{ role: "user", content }],
         }),
       });
       if (!res.ok) {

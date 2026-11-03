@@ -4,7 +4,7 @@ import ics from "./fixtures/events.ics?raw";
 import jsonldHtml from "./fixtures/jsonld.html?raw";
 import page from "./fixtures/page.html?raw";
 import flyerDataUrl from "./fixtures/flyer.pdf?inline";
-import { crawlSource, crawlAll, type CrawlDeps, type SourceRow } from "../src/crawl/run";
+import { crawlSource, crawlAll, collect, type CrawlDeps, type SourceRow } from "../src/crawl/run";
 import { toEventRow, dedupKeyOf } from "../src/crawl/normalize";
 import type { ClaudeClient } from "../src/claude";
 
@@ -299,6 +299,17 @@ describe("crawlSource", () => {
     const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/cal.ics": new Response("x", { status: 500 }) }));
     expect(r.status).toBe("failed");
     expect((await runs())[0]).toMatchObject({ status: "failed", error_message: expect.stringContaining("500") });
+  });
+});
+
+describe("collect", () => {
+  it("DB に書かずに、取得から抽出までの結果を返す（pnpm try-extract 用）", async () => {
+    const claude = { callTool: vi.fn(async () => ({ events: pdfEvents })) } satisfies ClaudeClient;
+    const out = await collect({ url: "https://example.jp/dayori.pdf", type: "pdf" }, deps({ "https://example.jp/dayori.pdf": pdfResponse() }, claude));
+    expect(out).toMatchObject({ type: "pdf", fetched: 1, skipped: [], warnings: [] });
+    expect(out.raws.map((r) => r.title)).toEqual(["紙コップ工作", "星空観察会"]);
+    expect(await runs()).toEqual([]);
+    expect(await events()).toEqual([]);
   });
 });
 

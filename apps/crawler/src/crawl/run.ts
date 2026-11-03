@@ -3,13 +3,14 @@ import type { ClaudeClient } from "../claude";
 import { extractHtml } from "../extract/html";
 import { extractIcal } from "../extract/ical";
 import { extractJsonLd } from "../extract/jsonld";
+import { extractPdf, findPdfLinks } from "../extract/pdf";
 import { extractRss } from "../extract/rss";
 import { summarizeEvents } from "../extract/summarize";
 import type { RawEvent } from "../extract/types";
 import { detectType } from "./detect";
 import { fetchDocument, FetchError, HostThrottle, isDue, USER_AGENT } from "./fetch";
 import { toEventRow, type EventRow } from "./normalize";
-import { checkRobots, parseRobots, type RobotsCheck } from "./robots";
+import { checkRobots, parseRobots, type Robots } from "./robots";
 
 export type CrawlDeps = {
   fetch: typeof fetch;
@@ -47,6 +48,77 @@ class RobotsDisallowed extends CrawlError {
   }
 }
 
+export type Collected = {
+  type: string | null;
+  fetched: number;
+  raws: RawEvent[];
+  skipped: string[];
+  warnings: string[];
+};
+
+/** 収集元を取得して抽出し、要約を付ける（DB には書かない）。途中で失敗したら例外。それまでの経過は progress に残る */
+export async function collect(
+  source: { url: string; type?: unknown },
+  deps: CrawlDeps,
+  progress: Collected = { type: null, fetched: 0, raws: [], skipped: [], warnings: [] },
+): Promise<Collected> {
+  const throttle = deps.throttle ?? new HostThrottle({ now: () => deps.now().getTime(), sleep: deps.sleep });
+  const url = new URL(source.url);
+  const robotsUrl = `${url.origin}/robots.txt`;
+  const robotsRules = await fetchRobots(url, deps);
+  const robots = checkRobots(robotsRules, url.pathname + url.search, USER_AGENT);
+  if (!robots.allowed) throw new RobotsDisallowed(robotsUrl, robots.rule ?? "Disallow");
+
+  await throttle.wait(url.host, robots.crawlDelaySec);
+  const doc = await fetchDocument(source.url, { fetch: deps.fetch });
+  progress.fetched = 1;
+
+  const detected = detectType({ contentType: doc.contentType, url: doc.url, body: doc.text });
+  progress.type = detected;
+  const declared = String(source.type ?? "");
+  let raws: RawEvent[];
+  if (detected === "pdf") {
+    raws = await extractPdf(doc.bytes, doc.url, requireClaude(deps.claude, "PDF"));
+  } else if (declared === "pdf" && detected === "html") {
+    progress.type = "pdf";
+    const links = findPdfLinks(doc.text, doc.url).filter((l) => new URL(l).host === url.host);
+    if (links.length === 0) throw new CrawlError(`一覧ページ（${doc.url}）に PDF へのリンクが見つかりません`);
+    const claude = requireClaude(deps.claude, "PDF");
+    raws = [];
+    for (const link of links) {
+      const lu = new URL(link);
+      const check = checkRobots(robotsRules, lu.pathname + lu.search, USER_AGENT);
+      if (!check.allowed) {
+        progress.skipped.push(`${link} は robots.txt（${robotsUrl}）の ${check.rule} で禁止のため取得しません`);
+        continue;
+      }
+      try {
+        await throttle.wait(lu.host, check.crawlDelaySec);
+        const pdfDoc = await fetchDocument(link, { fetch: deps.fetch });
+        progress.fetched++;
+        raws.push(...(await extractPdf(pdfDoc.bytes, pdfDoc.url, claude)));
+      } catch (e) {
+        progress.skipped.push(`${link} の取得・抽出に失敗（${e instanceof Error ? e.message : String(e)}）`);
+      }
+    }
+    if (raws.length === 0 && progress.skipped.length > 0) throw new CrawlError(progress.skipped.join(" / "));
+  } else {
+    const extracted = await extract(doc.text, doc.url, detected, declared, deps.claude);
+    progress.type = extracted.type;
+    raws = extracted.raws;
+  }
+  progress.raws = raws;
+
+  if (deps.claude) {
+    try {
+      progress.raws = await summarizeEvents(raws, deps.claude);
+    } catch (e) {
+      progress.warnings.push(`要約を作れなかったため要約なしで保存しました（${e instanceof Error ? e.message : String(e)}）`);
+    }
+  }
+  return progress;
+}
+
 /** 1 つの収集元をクロールし、events に保存して crawl_runs に記録する。失敗しても例外にせず failed を返す */
 export async function crawlSource(db: D1Database, source: SourceRow, deps: CrawlDeps): Promise<CrawlResult> {
   const startedAt = deps.now();
@@ -66,34 +138,12 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     duplicates: 0,
     error: null,
   };
-  let fetched = 0;
-  const throttle = deps.throttle ?? new HostThrottle({ now: () => deps.now().getTime(), sleep: deps.sleep });
+  const progress: Collected = { type: null, fetched: 0, raws: [], skipped: [], warnings: [] };
 
   try {
-    const url = new URL(source.url);
-    const robotsUrl = `${url.origin}/robots.txt`;
-    const robots = await fetchRobots(url, deps);
-    if (!robots.allowed) throw new RobotsDisallowed(robotsUrl, robots.rule ?? "Disallow");
-
-    await throttle.wait(url.host, robots.crawlDelaySec);
-    const doc = await fetchDocument(source.url, { fetch: deps.fetch });
-    fetched = 1;
-
-    const detected = detectType({ contentType: doc.contentType, url: doc.url, body: doc.text });
-    result.type = detected;
-    const extracted = await extract(doc.text, doc.url, detected, String(source.type ?? ""), deps.claude);
-    result.type = extracted.type;
-    result.extracted = extracted.raws.length;
-    let raws = extracted.raws;
-    if (deps.claude) {
-      try {
-        raws = await summarizeEvents(raws, deps.claude);
-      } catch (e) {
-        result.error = `要約を作れなかったため要約なしで保存しました（${e instanceof Error ? e.message : String(e)}）`;
-      }
-    }
-
-    const rows = raws
+    await collect(source, deps, progress);
+    result.extracted = progress.raws.length;
+    const rows = progress.raws
       .map((r) => toEventRow(r, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt }))
       .filter((r): r is EventRow => r !== null);
     result.dateFound = rows.length;
@@ -101,12 +151,16 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     const saved = await save(db, source.id, runId, rows);
     result.upserted = saved.upserted;
     result.duplicates = saved.duplicates;
-    result.status = result.dateFound < result.extracted ? "partial" : "success";
+    result.status = result.dateFound < result.extracted || progress.skipped.length > 0 ? "partial" : "success";
+    const notes = [...progress.skipped, ...progress.warnings];
+    result.error = notes.length > 0 ? notes.join(" / ") : null;
   } catch (e) {
     result.status = "failed";
     result.error = e instanceof Error ? e.message : String(e);
     if (e instanceof RobotsDisallowed) await rejectSource(db, source, e, startedAt);
   }
+  result.type = progress.type;
+  const fetched = progress.fetched;
 
   const finishedAt = deps.now();
   await db
@@ -140,23 +194,26 @@ async function rejectSource(db: D1Database, source: SourceRow, e: RobotsDisallow
     .run();
 }
 
-/** robots.txt を取得して判定する。404 などは「制限なし」、5xx・取得失敗は今回は見送り */
-async function fetchRobots(url: URL, deps: CrawlDeps): Promise<RobotsCheck> {
+/** robots.txt を取得して読む。404 などは「制限なし」（null）、5xx・取得失敗は今回は見送り */
+async function fetchRobots(url: URL, deps: CrawlDeps): Promise<Robots | null> {
   try {
     const doc = await fetchDocument(`${url.origin}/robots.txt`, { fetch: deps.fetch, maxBytes: 512 * 1024 });
-    return checkRobots(parseRobots(doc.text), url.pathname + url.search, USER_AGENT);
+    return parseRobots(doc.text);
   } catch (e) {
-    if (e instanceof FetchError && e.status !== null && e.status >= 400 && e.status < 500) {
-      return checkRobots(null, url.pathname, USER_AGENT);
-    }
+    if (e instanceof FetchError && e.status !== null && e.status >= 400 && e.status < 500) return null;
     throw new CrawlError(`robots.txt を確認できないため取得を見送りました（${(e as Error).message}）`);
   }
+}
+
+function requireClaude(claude: ClaudeClient | null, what: string): ClaudeClient {
+  if (!claude) throw new CrawlError(`${what} の抽出には Claude API が必要です（ANTHROPIC_API_KEY 未設定）`);
+  return claude;
 }
 
 async function extract(
   text: string,
   url: string,
-  detected: ReturnType<typeof detectType>,
+  detected: Exclude<ReturnType<typeof detectType>, "pdf">,
   declared: string,
   claude: ClaudeClient | null,
 ): Promise<{ type: string; raws: RawEvent[] }> {
@@ -165,8 +222,6 @@ async function extract(
       return { type: "ical", raws: extractIcal(text) };
     case "rss":
       return { type: "rss", raws: extractRss(text) };
-    case "pdf":
-      throw new CrawlError("PDF の抽出は未実装です（#8 で対応）");
     case "jsonld": {
       const raws = extractJsonLd(text, url);
       if (raws.length > 0) return { type: "jsonld", raws };
@@ -179,8 +234,7 @@ async function extract(
 }
 
 async function llm(html: string, url: string, claude: ClaudeClient | null): Promise<RawEvent[]> {
-  if (!claude) throw new CrawlError("HTML の抽出には Claude API が必要です（ANTHROPIC_API_KEY 未設定）");
-  return extractHtml(html, url, claude);
+  return extractHtml(html, url, requireClaude(claude, "HTML"));
 }
 
 type Existing = { source_id: number; dedup_key: string; title: string; start_at: string; venue: string | null };
@@ -240,6 +294,7 @@ function upsert(db: D1Database, sourceId: number, runId: number, r: EventRow): D
     price_min_yen: r.priceMinYen ?? null,
     price_max_yen: r.priceMaxYen ?? null,
     price_text: r.priceText ?? null,
+    apply_text: r.applyText ?? null,
     categories: JSON.stringify(r.categories ?? []),
     source_url: r.sourceUrl,
     dedup_key: r.dedupKey,

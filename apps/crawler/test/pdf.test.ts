@@ -9,7 +9,7 @@ const base64Of = (dataUrl: string) => dataUrl.slice(dataUrl.indexOf(",") + 1);
 const bytesOf = (dataUrl: string) => Uint8Array.from(atob(base64Of(dataUrl)), (c) => c.charCodeAt(0));
 
 function claudeReturning(events: unknown[]) {
-  const callTool = vi.fn(async (_args: Parameters<ClaudeClient["callTool"]>[0]) => ({ events }));
+  const callTool = vi.fn<ClaudeClient["callTool"]>(async () => ({ events }));
   return { callTool } satisfies ClaudeClient;
 }
 

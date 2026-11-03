@@ -7,7 +7,8 @@
     "test": "vitest run",
     "sync-sources": "tsx bin/sync-sources.ts",
     "check-policy": "tsx bin/check-policy.ts",
-    "dev": "wrangler dev --test-scheduled"
+    "dev": "wrangler dev --test-scheduled",
+    "try-extract": "tsx bin/try-extract.ts"
   },
   "dependencies": {
     "@kids-event-hub/core": "workspace:*",
