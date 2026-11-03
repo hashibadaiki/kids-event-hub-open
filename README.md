@@ -68,7 +68,7 @@ cd apps/crawler && pnpm dev                     # ローカル D1 で起動（--
 curl "http://localhost:8787/__scheduled?cron=0+18+*+*+*"   # Cron を手動で起動
 ```
 
-**PDF チラシ**: PDF は Claude API にそのまま（document として）渡し、イベントの配列（タイトル・開催日・時間・会場・対象年齢・料金・申込方法・要約）を受け取ります。1 枚に複数のイベントが載った広報や、月間カレンダー形式にも対応し、開催日が複数あるイベントは日付ごとに分けて保存します。掲載元（`source_url`）は PDF の URL です。収集元を `type: pdf` で登録した URL が HTML の一覧ページなら、同じホストの PDF リンク（最大 10 件）をたどり、それぞれ robots.txt も確認します。
+**PDF チラシ**: PDF は Claude API にそのまま（document として）渡し、イベントの配列（タイトル・開催日・時間・会場・対象年齢・料金・申込方法・要約）を受け取ります。1 枚に複数のイベントが載った広報や、月間カレンダー形式にも対応し、開催日が複数あるイベントは日付ごとに分けて保存します。掲載元（`source_url`）は PDF の URL です。収集元を `type: pdf` で登録した URL が HTML の一覧ページなら、同じホストの PDF リンクをたどり、それぞれ robots.txt も確認します。一度抽出した PDF は `pdf_documents` に記録し、次回以降は取得・抽出しません（過去の月の PDF が残り続ける一覧で、毎回 Claude に読ませないため）。新しい PDF は 1 回のクロールで 5 件まで処理し、残りは次回に回します。PDF 直リンクで登録した収集元は、同じ URL で中身が差し替わるので毎回読み直します。
 
 HTML・PDF の抽出には Claude API を使います。本番では `ANTHROPIC_API_KEY` を Worker の secret に設定します（オーナー作業）。ローカルでは `apps/crawler/.dev.vars` に書きます（コミットしない）。
 

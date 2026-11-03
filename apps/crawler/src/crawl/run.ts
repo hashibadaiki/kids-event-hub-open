@@ -59,13 +59,22 @@ export type Collected = {
   raws: RawEvent[];
   skipped: string[];
   warnings: string[];
+  /** 一覧ページからたどって抽出できた PDF（URL と件数） */
+  pdfs?: { url: string; extracted: number }[];
+  /** 一覧ページに新しい PDF がなく、何も抽出しなかった */
+  nothingNew?: boolean;
 };
+
+/** PDF の一覧ページで、1 回のクロールで取得・抽出する新しい PDF の上限 */
+export const MAX_NEW_PDFS_PER_RUN = 5;
 
 export type CollectOptions = {
   /** HTML の LLM 抽出に使う収集元の抽出設定 */
   config?: ExtractionConfig;
   /** PDF 以外の文書を取得したとき呼ぶ（自動改善ループの検証用の生データ保存） */
   onDocument?: (doc: FetchedDocument) => Promise<void>;
+  /** PDF の一覧ページで、抽出済みなので読み直さない PDF の URL */
+  knownPdfs?: ReadonlySet<string>;
 };
 
 /** 収集元を取得して抽出し、要約を付ける（DB には書かない）。途中で失敗したら例外。それまでの経過は progress に残る */
@@ -96,9 +105,18 @@ export async function collect(
     progress.type = "pdf";
     const links = findPdfLinks(doc.text, doc.url).filter((l) => new URL(l).host === url.host);
     if (links.length === 0) throw new CrawlError(`一覧ページ（${doc.url}）に PDF へのリンクが見つかりません`);
+    const fresh = links.filter((l) => !options.knownPdfs?.has(l));
+    if (fresh.length === 0) {
+      progress.nothingNew = true;
+      progress.raws = [];
+      return progress;
+    }
+    const batch = fresh.slice(0, MAX_NEW_PDFS_PER_RUN);
+    if (fresh.length > batch.length) progress.warnings.push(`新しい PDF のうち ${fresh.length - batch.length} 件は次回のクロールで取得します`);
     const claude = requireClaude(deps.claude, "PDF");
     raws = [];
-    for (const link of links) {
+    progress.pdfs = [];
+    for (const link of batch) {
       const lu = new URL(link);
       const check = checkRobots(robotsRules, lu.pathname + lu.search, USER_AGENT);
       if (!check.allowed) {
@@ -109,7 +127,9 @@ export async function collect(
         await throttle.wait(lu.host, check.crawlDelaySec);
         const pdfDoc = await fetchDocument(link, { fetch: deps.fetch });
         progress.fetched++;
-        raws.push(...(await extractPdf(pdfDoc.bytes, pdfDoc.url, claude)));
+        const found = await extractPdf(pdfDoc.bytes, pdfDoc.url, claude);
+        raws.push(...found);
+        progress.pdfs.push({ url: link, extracted: found.length });
       } catch (e) {
         progress.skipped.push(`${link} の取得・抽出に失敗（${e instanceof Error ? e.message : String(e)}）`);
       }
@@ -157,15 +177,19 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
 
   try {
     const config = await ensureActiveConfig(db, source.id, startedAt);
+    const known = await db.prepare("SELECT url FROM pdf_documents WHERE source_id = ?").bind(source.id).all<{ url: string }>();
     await db.prepare("UPDATE crawl_runs SET config_id = ? WHERE id = ?").bind(config.id, runId).run();
     await collect(source, deps, progress, {
       config: config.config,
+      knownPdfs: new Set(known.results.map((r) => r.url)),
       onDocument: async (doc) => {
         await saveRawDocument(db, { sourceId: source.id, runId, url: doc.url, contentType: doc.contentType, body: doc.text, fetchedAt: startedAt });
       },
     });
     result.extracted = progress.raws.length;
-    result.quality = scoreExtraction(progress.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt });
+    result.quality = progress.nothingNew
+      ? null
+      : scoreExtraction(progress.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt });
     const rows = progress.raws
       .map((r) => toEventRow(r, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt }))
       .filter((r): r is EventRow => r !== null);
@@ -174,6 +198,19 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     const saved = await save(db, source.id, runId, rows);
     result.upserted = saved.upserted;
     result.duplicates = saved.duplicates;
+    if (progress.pdfs && progress.pdfs.length > 0) {
+      await db.batch(
+        progress.pdfs.map((p) =>
+          db
+            .prepare(
+              `INSERT INTO pdf_documents (source_id, crawl_run_id, url, extracted_count, extracted_at) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT (source_id, url) DO UPDATE SET crawl_run_id = excluded.crawl_run_id, extracted_count = excluded.extracted_count,
+                 extracted_at = excluded.extracted_at`,
+            )
+            .bind(source.id, runId, p.url, p.extracted, startedAt.toISOString()),
+        ),
+      );
+    }
     result.status = result.dateFound < result.extracted || progress.skipped.length > 0 ? "partial" : "success";
     const notes = [...progress.skipped, ...progress.warnings];
     result.error = notes.length > 0 ? notes.join(" / ") : null;

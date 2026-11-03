@@ -196,6 +196,23 @@ export const rawDocuments = sqliteTable(
   (t) => [index("raw_documents_source_fetched_idx").on(t.sourceId, t.fetchedAt)],
 );
 
+/** PDF の一覧ページからたどって抽出済みの PDF。次回以降のクロールでは取得・抽出しない */
+export const pdfDocuments = sqliteTable(
+  "pdf_documents",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sourceId: integer("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    crawlRunId: integer("crawl_run_id").references(() => crawlRuns.id, { onDelete: "set null" }),
+    url: text("url").notNull(),
+    extractedCount: integer("extracted_count").notNull(),
+    extractedAt: text("extracted_at").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("pdf_documents_source_url_unique").on(t.sourceId, t.url)],
+);
+
 /** 品質指標（0〜1 の率）。crawler の scoreExtraction の結果 */
 export type QualityMetrics = Record<string, number>;
 
