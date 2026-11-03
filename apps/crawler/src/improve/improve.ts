@@ -5,7 +5,7 @@ import { parseExtractionConfig, type ExtractionConfig } from "../extract/config"
 import { htmlToText } from "../extract/html";
 import type { RawEvent } from "../extract/types";
 import { ensureActiveConfig, latestRawDocuments, type RawDocument } from "./configs";
-import { decideAdoption, needsImprovement, scoreExtraction, type QualityReport } from "./quality";
+import { decideAdoption, lostEvents, needsImprovement, scoreExtraction, type QualityReport } from "./quality";
 
 export { ensureActiveConfig, saveRawDocument, RAW_DOCS_PER_SOURCE } from "./configs";
 
@@ -13,7 +13,7 @@ export type ImproveDeps = { claude: ClaudeClient | null; now: () => Date };
 
 export type ImproveResult = {
   sourceId: number;
-  decision: "adopted" | "rejected" | "skipped";
+  decision: "adopted" | "pending" | "rejected" | "skipped";
   reason: string;
   baseline?: QualityReport;
   candidate?: QualityReport;
@@ -99,7 +99,8 @@ function proposalPrompt(current: ExtractionConfig, report: QualityReport, sample
 
 /**
  * 1 つの収集元について、改善案の作成 → 保存データでの検証 → 採否 を行う。
- * 良くなった場合だけ新しい版を active にし、前後比較を config_evaluations に残す
+ * はっきり良くなった場合だけ新しい版を active にする。微妙な改善は candidate のまま残して人間の確認（pending）に回す。
+ * 前後比較は config_evaluations に残す
  */
 export async function improveSource(db: D1Database, sourceId: number, deps: ImproveDeps): Promise<ImproveResult> {
   const skip = (reason: string): ImproveResult => ({ sourceId, decision: "skipped", reason });
@@ -153,8 +154,12 @@ export async function improveSource(db: D1Database, sourceId: number, deps: Impr
     return { ...skip(reason), baseline: baseline.report, baselineConfigId: active.id, candidateConfigId: candidateId };
   }
 
-  const decision = decideAdoption(baseline.report, candidate.report);
-  const statements = decision.adopt
+  const referenceDate = new Date(docs[0]!.fetchedAt);
+  const lost = lostEvents(baseline.raws, candidate.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate });
+  const decision = decideAdoption(baseline.report, candidate.report, { lost });
+  const candidateStatus = decision.decision === "pending" ? "candidate" : "rejected";
+  const statements =
+    decision.decision === "adopted"
     ? [
         db.prepare("UPDATE extraction_configs SET status = 'retired', quality_score = ? WHERE id = ?").bind(baseline.report.score, active.id),
         db
@@ -163,7 +168,7 @@ export async function improveSource(db: D1Database, sourceId: number, deps: Impr
       ]
     : [
         db.prepare("UPDATE extraction_configs SET quality_score = ? WHERE id = ?").bind(baseline.report.score, active.id),
-        db.prepare("UPDATE extraction_configs SET status = 'rejected', quality_score = ? WHERE id = ?").bind(candidate.report.score, candidateId),
+        db.prepare("UPDATE extraction_configs SET status = ?, quality_score = ? WHERE id = ?").bind(candidateStatus, candidate.report.score, candidateId),
       ];
   statements.push(
     db
@@ -180,7 +185,7 @@ export async function improveSource(db: D1Database, sourceId: number, deps: Impr
         JSON.stringify(baseline.report),
         JSON.stringify(candidate.report),
         docs.length,
-        decision.adopt ? "adopted" : "rejected",
+        decision.decision,
         decision.reason,
       ),
   );
@@ -188,7 +193,7 @@ export async function improveSource(db: D1Database, sourceId: number, deps: Impr
 
   return {
     sourceId,
-    decision: decision.adopt ? "adopted" : "rejected",
+    decision: decision.decision,
     reason: decision.reason,
     baseline: baseline.report,
     candidate: candidate.report,

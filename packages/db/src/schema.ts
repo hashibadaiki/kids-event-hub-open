@@ -34,7 +34,7 @@ export const SOURCE_STATUSES = ["approved", "pending", "rejected"] as const;
 export const POLICY_STATUSES = ["ok", "caution", "ng"] as const;
 export const CONFIG_STATUSES = ["candidate", "active", "retired", "rejected"] as const;
 export const RUN_STATUSES = ["running", "success", "partial", "failed"] as const;
-export const EVALUATION_DECISIONS = ["adopted", "rejected"] as const;
+export const EVALUATION_DECISIONS = ["adopted", "pending", "rejected"] as const;
 
 /** 施設。将来の施設管理者投稿のスコープ単位（今は空でよい） */
 export const facilities = sqliteTable("facilities", {
