@@ -179,6 +179,25 @@ describe("crawlSource", () => {
     expect((await runs())[0]).toMatchObject({ status: "failed", error_message: expect.stringContaining("robots.txt") });
   });
 
+  it("robots.txt で禁止されていたら収集元を rejected / ng にし、根拠の URL と規則を残す", async () => {
+    const id = await addSource("https://example.jp/private/cal.ics", "ical", { policy_status: "ok" });
+    const d = deps({ "https://example.jp/robots.txt": new Response("User-agent: *\nDisallow: /private/") });
+    await crawlSource(env.DB, await source(id), d);
+    const s = await source(id);
+    expect(s).toMatchObject({ status: "rejected", policy_status: "ng", policy_checked_at: "2026-11-03T18:00:00.000Z" });
+    expect(s.policy_note).toContain("https://example.jp/robots.txt");
+    expect(s.policy_note).toContain("Disallow: /private/");
+    expect(s.policy_note).toContain("https://example.jp/private/cal.ics");
+    expect((await runs())[0]!.error_message).toContain("https://example.jp/robots.txt");
+  });
+
+  it("robots.txt を確認できなかっただけなら収集元は rejected にしない", async () => {
+    const id = await addSource("https://example.jp/cal.ics", "ical");
+    const d = deps({ "https://example.jp/robots.txt": new Response("error", { status: 503 }) });
+    await crawlSource(env.DB, await source(id), d);
+    expect(await source(id)).toMatchObject({ status: "approved", policy_status: null });
+  });
+
   it("HTML なのに Claude がない・PDF（#8）は failed として記録する", async () => {
     const id = await addSource("https://example.jp/events/", "html");
     const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }));
