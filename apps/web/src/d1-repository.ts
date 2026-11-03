@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { events } from "@kids-event-hub/db";
-import { addDays, type SearchQuery } from "./search";
+import { addDays, keywordTerms, type SearchQuery } from "./search";
 import { DEFAULT_LIMIT, type EventRecord, type EventRepository } from "./repository";
 
 const columns = {
@@ -40,6 +40,17 @@ export function createD1Repository(d1: D1Database): EventRepository {
         conditions.push(
           or(isNull(events.ageMin), lte(events.ageMin, query.age))!,
           or(isNull(events.ageMax), gte(events.ageMax, query.age))!,
+        );
+      }
+      for (const term of keywordTerms(query.keyword)) {
+        // % と _ は文字として扱う
+        const pattern = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        conditions.push(
+          or(
+            ...[events.title, events.summary, events.venue, events.city].map(
+              (col) => sql`${col} LIKE ${pattern} ESCAPE '\\'`,
+            ),
+          )!,
         );
       }
       return db

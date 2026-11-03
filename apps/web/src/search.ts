@@ -7,6 +7,8 @@ export type SearchQuery = {
   from: string;
   to: string;
   age?: number;
+  /** タイトル・概要・会場・市町村の部分一致。空白区切りは AND */
+  keyword?: string;
 };
 
 export type ParseResult =
@@ -100,7 +102,18 @@ export function searchPath(q: Pick<SearchQuery, "slug" | "from" | "to" | "age">)
   return s ? `${path}?${s}` : path;
 }
 
+/** キーワード → 検索語（全角・半角の空白で分割） */
+export const keywordTerms = (keyword: string | undefined): string[] =>
+  (keyword ?? "").split(/[\s\u3000]+/).filter((t) => t.length > 0);
+
+/** SQLite の LIKE と同じく ASCII だけ大文字小文字を区別しない */
+const foldAscii = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+
 type Matchable = {
+  title: string;
+  summary: string | null;
+  venue: string | null;
+  city: string | null;
   prefecture: string;
   startAt: string;
   endAt: string | null;
@@ -112,6 +125,7 @@ type Matchable = {
  * イベントが条件に合うか。
  * - 期間 [from, to] と開催期間が重なる: `start_at < to の翌日 AND coalesce(end_at, start_at) >= from`
  * - 対象年齢: 範囲に入る、または年齢の記載がない（不明なものは落とさない）
+ * - キーワード: 各語がタイトル・概要・会場・市町村のどれかに含まれる
  * D1 実装の SQL もこの条件に合わせる
  */
 export function matchesQuery<T extends Matchable>(e: T, q: SearchQuery): boolean {
@@ -120,6 +134,11 @@ export function matchesQuery<T extends Matchable>(e: T, q: SearchQuery): boolean
   if (q.age !== undefined) {
     if (e.ageMin !== null && e.ageMin > q.age) return false;
     if (e.ageMax !== null && e.ageMax < q.age) return false;
+  }
+  const terms = keywordTerms(q.keyword);
+  if (terms.length > 0) {
+    const haystack = [e.title, e.summary, e.venue, e.city].map((f) => foldAscii(f ?? ""));
+    if (!terms.every((t) => haystack.some((h) => h.includes(foldAscii(t))))) return false;
   }
   return true;
 }

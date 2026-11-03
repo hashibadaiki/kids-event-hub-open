@@ -101,6 +101,15 @@ describe.each(implementations)("EventRepository (%s)", (_name, make) => {
     expect(ids(await repo.search(q({ prefecture: "徳島県", slug: "tokushima" })))).toEqual([4]);
   });
 
+  it("キーワード: タイトル・概要・会場・市町村の部分一致（空白区切りは AND、% と _ は文字として扱う）", async () => {
+    const range = { from: "2026-11-01", to: "2026-11-30" };
+    expect(ids(await repo.search(q({ ...range, keyword: "工作" })))).toEqual([2]);
+    expect(ids(await repo.search(q({ ...range, keyword: "読み聞かせ 図書館" })))).toEqual([6, 1, 5, 7, 2]);
+    expect(ids(await repo.search(q({ ...range, keyword: "スタンプ 図書館" })))).toEqual([]);
+    expect(ids(await repo.search(q({ ...range, keyword: "%" })))).toEqual([]);
+    expect(ids(await repo.search(q({ ...range, keyword: "_" })))).toEqual([]);
+  });
+
   it("件数の上限", async () => {
     expect(ids(await repo.search(q({ from: "2026-11-01", to: "2026-11-30" }), 2))).toEqual([3, 6]);
   });
