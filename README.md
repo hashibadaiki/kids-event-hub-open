@@ -147,16 +147,69 @@ pnpm exec wrangler deploy                          # クローラー（Cron Trig
 
 （TODO）PDF / HTML の構造化、抽出設定の自動改善、MCP サーバー、開発での Claude Code 活用。
 
-### Claude Code の設定（`.claude/`）
+### Claude Code をソフトウェアファクトリーとして回す
 
-開発で使っている Claude Code の設定を、リポジトリにそのまま残しています。
+開発と運用の両方を、Claude Code を中心にした 2 つのループで回しています。**Claude が計画・実装・検証を進め、人間は要所でチェックして採否を決めます**（全自動にはしません）。部品は `.claude/` にそのまま残しています（詳細: [`.claude/README.md`](./.claude/README.md)、開発ルール: [`CLAUDE.md`](./CLAUDE.md)）。
 
-- `.claude/settings.json`: フックの登録
-- `.claude/hooks/`: フック。`guard-bash.mjs` はデプロイ・ログイン・秘密情報の登録・リソース作成・`main` への push を止める（テスト付き）
-- `.claude/skills/`: 作業手順のスキル（`<名前>/SKILL.md`）
-- `.claude/agents/`: サブエージェントの定義（`<名前>.md`）
+#### どの目的にどの仕組みを使ったか
 
-開発ルールは [`CLAUDE.md`](./CLAUDE.md)、各ディレクトリの説明は [`.claude/README.md`](./.claude/README.md) を参照。
+| 目的 | 仕組み | 実体 |
+| --- | --- | --- |
+| 繰り返す作業を毎回同じ手順で行う | **Skills** | `/add-source`（収集元の追加）、`/crawl`（1 件クロール）、`/improve`（抽出設定の改善）、`/review-pr`（レビューのまとめ） |
+| 役割ごとに文脈と権限を分ける（作った本人と別の目でレビュー・検証） | **サブエージェント** | 開発: `planner` → `implementer` → `reviewer`。運用: `improver` → `verifier`。レビュー役・検証役は書き込みツールなし |
+| ルールを「お願い」ではなく機械的に守らせる | **フック** | `guard-bash`（デプロイ・ログイン・secret・リソース作成・`--remote`・main への push を止める）、`pre-commit-check`（コミット前に typecheck・lint・test）、`migration-notice`（スキーマ変更時の注意）、`guard-pr`（PR の issue 紐付けを確認・マージ前にチェックリストを渡し、要件・運用ルール・本番に触れる PR はオーナーに回す） |
+| 作ったサービスを Claude 自身からも使う | **MCP** | `.mcp.json` に検索 MCP サーバー（`search_events` / `get_event`）を登録。Claude Code から実データを引いてクロール結果を確かめられる |
+| データを Claude で構造化・改善する | **Claude API** | PDF / HTML の構造化、要約、抽出設定の改善案（クローラー内） |
+
+#### ループ 1: 開発ループ（issue → 実装 → レビュー → マージ。要件・運用ルール・本番に触れる PR は人間が承認）
+
+```mermaid
+flowchart LR
+  I["issue<br/>（人が ready を付ける）"] --> P["planner<br/>設計案・作業分割・先に書くテスト"]
+  P --> M["implementer<br/>issue-N ブランチで TDD"]
+  M -- "git commit" --> H1{{"pre-commit-check<br/>typecheck・lint・test"}}
+  H1 -- 失敗 --> M
+  H1 -- 通過 --> PR["PR 作成"]
+  PR -. "Closes #N がない" .-> H2{{"guard-pr で停止"}}
+  PR --> CI["CI<br/>typecheck → lint → test"]
+  PR --> R["reviewer（/review-pr）<br/>実装を見ていない別エージェント"]
+  CI --> CK{{"guard-pr のチェックリスト<br/>CI・要件・レビュー指摘・運用ルール/本番への影響"}}
+  R --> CK
+  CK -- "CI グリーン・指摘解消<br/>要件も運用ルールも変えない" --> MERGE["Claude がマージ"]
+  CK -- "要件を変える・緩める<br/>運用ルール・本番データに影響" --> HUMAN(["👤 人間のチェック<br/>マージするか"])
+  HUMAN -- 承認 --> MERGE
+  HUMAN -- 差し戻し --> M
+  G{{"guard-bash<br/>deploy・secret・--remote・main への push を停止"}} -.-> M
+```
+
+#### ループ 2: 運用ループ（クロール品質の自動改善）
+
+```mermaid
+flowchart LR
+  C["クロール（1 日 1 回）"] --> S["品質を採点<br/>日付・場所・対象年齢の取得率など"]
+  S -- "閾値 0.7 以上" --> OK["そのまま"]
+  S -- "閾値未満" --> IM["improver<br/>抽出設定の改善案"]
+  IM --> V["verifier<br/>保存済みデータで新旧を再抽出・採点"]
+  V -- "+10pt 以上かつ<br/>正解サンプルを壊さない" --> AUTO["自動採用（新しい版を active）"]
+  V -- "微妙な改善・<br/>判断が割れる" --> HUMAN(["👤 人間のチェック<br/>前後比較と差分サンプルを見て承認"])
+  V -- 改善なし --> REJ["不採用（記録は残す）"]
+  HUMAN -- 承認 --> AUTO
+  HUMAN -- 却下 --> REJ
+  AUTO --> D["ダッシュボード（#13）で前後比較"]
+  REJ --> LOG["docs/improvement-log.md"]
+  AUTO --> LOG
+```
+
+#### 人間のチェックポイント（何を見て判断するか）
+
+| チェックポイント | 誰が・どこで | 何を見て判断するか |
+| --- | --- | --- |
+| **着手**（issue に `ready`） | オーナー / GitHub | 要件（ゴール）と「やること」が明確か。依存する issue が片付いているか |
+| **PR のマージ**（要件を変える・緩める、運用ルール・本番データに影響する PR だけ。それ以外は CI グリーンなら Claude がマージ） | オーナー / GitHub（Claude Code ではマージ操作の前に `guard-pr` がチェックリストを渡し、該当する PR は Claude がマージせず止まる） | ① CI がグリーン ② issue の「やること」が全部満たされ、要件を緩めていない（PR 本文の「未対応」「判断に迷った点」） ③ `/review-pr` の指摘が解消済み ④ 本番データ・運用ルールへの影響（migration、`CLAUDE.md`・`.claude/` の変更）と「オーナー作業」の内容 |
+| **改善案の承認**（`/improve` の判定が human） | オーナー / Claude Code の会話 | ① 前後のスコアと指標（日付・場所・対象年齢の取得率、重複率、欠損率、件数） ② 正解サンプルを落としていないか ③ 差分サンプル（新しく取れた / 取れなくなったイベント）が実際のページと合っているか ④ 過去に却下した案（`docs/improvement-log.md`）の繰り返しでないか |
+| **デプロイ** | オーナー / 手元のターミナル（`wrangler deploy`、`--remote` の migration、`secret put`。Claude は `guard-bash` で実行できない） | ① マージ済みの PR の「オーナー作業」 ② migration を Worker より先に適用する順番 ③ デプロイ後の `/healthz` と検索結果・ダッシュボードの確認 |
+
+デモの台本: [`docs/factory-demo.md`](./docs/factory-demo.md)。採用しなかった改善案や失敗したクロールの記録: [`docs/improvement-log.md`](./docs/improvement-log.md)。
 
 ## 秘密情報の扱い
 
