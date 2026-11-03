@@ -72,6 +72,11 @@ curl "http://localhost:8787/__scheduled?cron=0+18+*+*+*"   # Cron を手動で�
 
 HTML・PDF の抽出には Claude API を使います。本番では `ANTHROPIC_API_KEY` を Worker の secret に設定します（オーナー作業）。ローカルでは `apps/crawler/.dev.vars` に書きます（コミットしない）。
 
+### 運用ダッシュボード
+
+クロール結果・抽出品質・自動改善の前後比較は Claude の Dashboard で見ます（管理画面は自作しません）。
+データは読み取り専用の `GET /api/dashboard`（JSON、認証なし、公開してよい集計のみ）。構成とデモで映す場面は [docs/dashboard.md](./docs/dashboard.md)。
+
 ### 検索サイト
 
 ログイン不要・モバイル向けの SSR ページ。URL は固定で、そのまま共有できます。
