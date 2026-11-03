@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import ics from "./fixtures/events.ics?raw";
 import jsonldHtml from "./fixtures/jsonld.html?raw";
 import page from "./fixtures/page.html?raw";
+import flyerDataUrl from "./fixtures/flyer.pdf?inline";
 import { crawlSource, crawlAll, type CrawlDeps, type SourceRow } from "../src/crawl/run";
 import { toEventRow, dedupKeyOf } from "../src/crawl/normalize";
 import type { ClaudeClient } from "../src/claude";
@@ -86,6 +87,12 @@ describe("toEventRow", () => {
     expect(row!.summary).toBeNull();
   });
 });
+
+const pdfResponse = () => new Response(Uint8Array.from(atob(flyerDataUrl.slice(flyerDataUrl.indexOf(",") + 1)), (c) => c.charCodeAt(0)), { headers: { "content-type": "application/pdf" } });
+const pdfEvents = [
+  { title: "紙コップ工作", dates: ["2026年11月15日"], time_text: "10:00〜12:00", apply_text: "電話で受付", summary: "親子工作" },
+  { title: "星空観察会", dates: ["2026年11月21日"], time_text: "18:30〜20:00" },
+];
 
 describe("crawlSource", () => {
   it("iCal を取得して events に保存し、crawl_runs に件数を記録する", async () => {
@@ -229,14 +236,62 @@ describe("crawlSource", () => {
     expect(await source(id)).toMatchObject({ status: "approved", policy_status: null });
   });
 
-  it("HTML なのに Claude がない・PDF（#8）は failed として記録する", async () => {
+  it("HTML・PDF なのに Claude がなければ failed として記録する", async () => {
     const id = await addSource("https://example.jp/events/", "html");
     const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }));
     expect(r).toMatchObject({ status: "failed", error: expect.stringContaining("ANTHROPIC_API_KEY") });
 
     const pdf = await addSource("https://example.jp/a.pdf", "pdf");
     const r2 = await crawlSource(env.DB, await source(pdf), deps({ "https://example.jp/a.pdf": new Response("%PDF-1.7", { headers: { "content-type": "application/pdf" } }) }));
-    expect(r2).toMatchObject({ status: "failed", type: "pdf", error: expect.stringContaining("#8") });
+    expect(r2).toMatchObject({ status: "failed", type: "pdf", error: expect.stringContaining("ANTHROPIC_API_KEY") });
+  });
+
+  it("PDF チラシを Claude で構造化し、掲載元を PDF の URL・申込方法付きで保存する", async () => {
+    const id = await addSource("https://example.jp/dayori.pdf", "pdf");
+    const claude = { callTool: vi.fn(async () => ({ events: pdfEvents })) } satisfies ClaudeClient;
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/dayori.pdf": pdfResponse() }, claude));
+    expect(r).toMatchObject({ status: "success", type: "pdf", extracted: 2, dateFound: 2, upserted: 2, error: null });
+    expect(claude.callTool).toHaveBeenCalledTimes(1);
+    const saved = await env.DB.prepare("SELECT title, start_at, source_url, apply_text, summary FROM events ORDER BY start_at").all();
+    expect(saved.results).toEqual([
+      { title: "紙コップ工作", start_at: "2026-11-15T10:00", source_url: "https://example.jp/dayori.pdf", apply_text: "電話で受付", summary: "親子工作" },
+      { title: "星空観察会", start_at: "2026-11-21T18:30", source_url: "https://example.jp/dayori.pdf", apply_text: null, summary: null },
+    ]);
+  });
+
+  it("PDF の収集元が HTML の一覧ページなら、同じホストの PDF リンクをたどる（robots.txt で禁止された PDF は取らない）", async () => {
+    const id = await addSource("https://example.jp/kodomo/", "pdf");
+    const listing = `<a href="/files/a.pdf">A</a><a href="/private/b.pdf">B</a><a href="https://other.example.com/c.pdf">C</a>`;
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const d = deps(
+      {
+        "https://example.jp/robots.txt": new Response("User-agent: *\nDisallow: /private/"),
+        "https://example.jp/kodomo/": new Response(listing, { headers: { "content-type": "text/html" } }),
+        "https://example.jp/files/a.pdf": pdfResponse(),
+      },
+      claude,
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(r).toMatchObject({ status: "partial", type: "pdf", extracted: 1, upserted: 1 });
+    expect(r.error).toContain("https://example.jp/private/b.pdf");
+    const fetched = d.fetch.mock.calls.map((c) => String(c[0]));
+    expect(fetched).not.toContain("https://example.jp/private/b.pdf");
+    expect(fetched).not.toContain("https://other.example.com/c.pdf");
+    expect((await runs())[0]).toMatchObject({ fetched_count: 2 });
+    expect((await source(id)).status).toBe("approved");
+    expect((await events())[0]).toMatchObject({ source_url: "https://example.jp/files/a.pdf" });
+  });
+
+  it("一覧ページに PDF へのリンクがなければ failed", async () => {
+    const id = await addSource("https://example.jp/kodomo/", "pdf");
+    const claude = { callTool: vi.fn() } satisfies ClaudeClient;
+    const r = await crawlSource(
+      env.DB,
+      await source(id),
+      deps({ "https://example.jp/kodomo/": new Response("<p>準備中</p>", { headers: { "content-type": "text/html" } }) }, claude),
+    );
+    expect(r).toMatchObject({ status: "failed", error: expect.stringContaining("PDF") });
+    expect(claude.callTool).not.toHaveBeenCalled();
   });
 
   it("取得エラーは failed として記録し、例外にしない", async () => {
