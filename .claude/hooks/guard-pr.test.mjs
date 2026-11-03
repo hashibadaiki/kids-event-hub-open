@@ -38,6 +38,8 @@ test("--body-file の中身も見る", () => {
   writeFileSync(ng, "説明のみ\n");
   assert.equal(checkToolCall(bash(`gh pr create --title x --body-file ${ok}`)), null);
   assert.equal(checkToolCall(bash(`gh pr create --title x -F ${ng}`))?.decision, "deny");
+  assert.equal(checkToolCall(bash(`gh api -X POST repos/o/r/pulls -f title=x -F body=@${ok}`)), null);
+  assert.equal(checkToolCall(bash(`gh api repos/o/r/pulls -f title=x --field "body=@${ng}"`))?.decision, "deny");
 });
 
 test("マージの前に人間の確認を求める", () => {

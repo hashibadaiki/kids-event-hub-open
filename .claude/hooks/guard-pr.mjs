@@ -17,11 +17,15 @@ const MERGE_CHECKLIST = [
   "4. 本番データ・運用ルールへの影響（migration、CLAUDE.md・.claude/ の変更）と「オーナー作業」の有無",
 ].join("\n");
 
+/** 本文をファイルから読む指定（gh pr create --body-file / -F <path>、gh api -F body=@<path>）の中身 */
 function bodyFileText(command) {
-  const m = command.match(/(?:--body-file|\s-F)\s+("[^"]+"|'[^']+'|\S+)/);
-  if (!m) return "";
-  const path = m[1].replace(/^["']|["']$/g, "");
-  return path !== "-" && existsSync(path) ? readFileSync(path, "utf8") : "";
+  const texts = [];
+  for (const m of command.matchAll(/(?:--body-file|\s-F|--field)\s+("[^"]+"|'[^']+'|\S+)/g)) {
+    let path = m[1].replace(/^["']|["']$/g, "");
+    if (path.startsWith("body=@")) path = path.slice("body=@".length);
+    if (path !== "-" && existsSync(path)) texts.push(readFileSync(path, "utf8"));
+  }
+  return texts.join("\n");
 }
 
 function isBashPrCreate(command) {
