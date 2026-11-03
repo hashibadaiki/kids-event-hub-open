@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>こども未来館 お知らせ</title>
+<item>
+  <title>【11月23日（月・祝）】科学実験ショー</title>
+  <link>https://example.jp/news/10</link>
+  <description><![CDATA[<p>午後1時30分から。参加費無料。対象：小学生</p>]]></description>
+  <pubDate>Mon, 02 Nov 2026 09:00:00 +0900</pubDate>
+</item>
+<item>
+  <title>休館日のお知らせ &amp; 工事</title>
+  <link>https://example.jp/news/11</link>
+  <description>館内工事のため休館します。</description>
+</item>
+</channel></rss>

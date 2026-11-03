@@ -1,0 +1,213 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { env } from "cloudflare:workers";
+import ics from "./fixtures/events.ics?raw";
+import jsonldHtml from "./fixtures/jsonld.html?raw";
+import page from "./fixtures/page.html?raw";
+import { crawlSource, crawlAll, type CrawlDeps } from "../src/crawl/run";
+import { toEventRow, dedupKeyOf } from "../src/crawl/normalize";
+import type { ClaudeClient } from "../src/claude";
+
+type Routes = Record<string, Response | (() => Response)>;
+
+function fakeFetch(routes: Routes) {
+  return vi.fn(async (input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const r = routes[url];
+    if (!r) return new Response("not found", { status: 404 });
+    return typeof r === "function" ? r() : r.clone();
+  });
+}
+
+function deps(routes: Routes, claude: ClaudeClient | null = null): CrawlDeps & { fetch: ReturnType<typeof fakeFetch> } {
+  return {
+    fetch: fakeFetch(routes),
+    claude,
+    now: () => new Date("2026-11-03T18:00:00Z"),
+    sleep: async () => {},
+  };
+}
+
+async function addSource(url: string, type = "html", extra: Record<string, unknown> = {}) {
+  const cols = { name: "テスト", url, type, prefecture: "香川県", status: "approved", ...extra };
+  const keys = Object.keys(cols);
+  const r = await env.DB.prepare(
+    `INSERT INTO sources (${keys.join(", ")}) VALUES (${keys.map(() => "?").join(", ")}) RETURNING id`,
+  )
+    .bind(...Object.values(cols))
+    .first<{ id: number }>();
+  return r!.id;
+}
+
+async function source(id: number) {
+  return (await env.DB.prepare("SELECT * FROM sources WHERE id = ?").bind(id).first())!;
+}
+
+const events = async () =>
+  (
+    await env.DB.prepare(
+      "SELECT source_id, crawl_run_id, title, start_at, end_at, all_day, venue, age_min, age_max, price_free, price_min_yen, categories, source_url, summary FROM events ORDER BY start_at",
+    ).all()
+  ).results;
+const runs = async () => (await env.DB.prepare("SELECT * FROM crawl_runs ORDER BY id").all()).results;
+
+beforeEach(async () => {
+  await env.DB.batch([env.DB.prepare("DELETE FROM events"), env.DB.prepare("DELETE FROM crawl_runs"), env.DB.prepare("DELETE FROM sources")]);
+});
+
+describe("toEventRow", () => {
+  const ctx = { prefecture: "香川県", sourceUrl: "https://a.jp/list", referenceDate: new Date("2026-11-03T00:00:00Z") };
+
+  it("日付テキスト・年齢・料金・カテゴリを正規化する", () => {
+    const row = toEventRow(
+      { title: "工作教室「どんぐりごま」", dateText: "11月15日（日） 午後2時から", ageText: "小学生", priceText: "材料費100円" },
+      ctx,
+    );
+    expect(row).toMatchObject({
+      title: "工作教室「どんぐりごま」",
+      startAt: "2026-11-15T14:00",
+      allDay: false,
+      prefecture: "香川県",
+      ageMin: 6,
+      ageMax: 12,
+      priceFree: false,
+      priceMinYen: 100,
+      categories: ["craft"],
+      sourceUrl: "https://a.jp/list",
+    });
+    expect(row!.dedupKey).toBe(dedupKeyOf("香川県", "2026-11-15T14:00", "工作教室「どんぐりごま」"));
+  });
+
+  it("日付が取れない候補は保存しない（null）", () => {
+    expect(toEventRow({ title: "休館日のお知らせ", dateText: "館内工事のため休館" }, ctx)).toBeNull();
+  });
+
+  it("本文は転載せず、要約がなければ短く切る", () => {
+    const row = toEventRow({ title: "a", start: "2026-11-20", allDay: true, description: "あ".repeat(300) }, ctx);
+    expect(row!.summary!.length).toBeLessThanOrEqual(81);
+  });
+});
+
+describe("crawlSource", () => {
+  it("iCal を取得して events に保存し、crawl_runs に件数を記録する", async () => {
+    const id = await addSource("https://example.jp/cal.ics", "ical");
+    const d = deps({
+      "https://example.jp/robots.txt": new Response("User-agent: *\nDisallow: /private/"),
+      "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }),
+    });
+    const result = await crawlSource(env.DB, await source(id), d);
+    expect(result).toMatchObject({ status: "success", extracted: 3, dateFound: 3, upserted: 3 });
+
+    const saved = await events();
+    expect(saved.map((e) => [e.title, e.start_at])).toEqual([
+      ["星空観察会", "2026-11-21T18:30"],
+      ["UTC の予定", "2026-12-01T10:00"],
+      ["冬休みこども工作ひろば", "2026-12-26"],
+    ]);
+    expect(saved[0]).toMatchObject({ venue: "さぬきこどもの国", source_url: "https://example.jp/ev/1", price_free: 1, age_min: 6 });
+
+    const [run] = await runs();
+    expect(run).toMatchObject({
+      source_id: id,
+      status: "success",
+      fetched_count: 1,
+      extracted_count: 3,
+      date_found_count: 3,
+      upserted_count: 3,
+      error_message: null,
+    });
+    expect(run!.finished_at).not.toBeNull();
+    expect(saved.every((e) => e.crawl_run_id === run!.id)).toBe(true);
+
+    // User-Agent を付けて取得している
+    const ua = new Headers((d.fetch.mock.calls[1] as unknown as [string, RequestInit])[1].headers).get("user-agent");
+    expect(ua).toContain("kids-event-hub-crawler");
+  });
+
+  it("2 回目は同じイベントを更新し、二重登録しない", async () => {
+    const id = await addSource("https://example.jp/cal.ics", "ical");
+    const routes = { "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }) };
+    await crawlSource(env.DB, await source(id), deps(routes));
+    await crawlSource(env.DB, await source(id), deps(routes));
+    expect(await events()).toHaveLength(3);
+  });
+
+  it("別の収集元にある同じイベント（表記ゆれ）は重複として入れない", async () => {
+    const a = await addSource("https://example.jp/cal.ics", "ical");
+    const b = await addSource("https://other.jp/list", "jsonld");
+    await crawlSource(env.DB, await source(a), deps({ "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }) }));
+    const html = `<script type="application/ld+json">{"@type":"Event","name":"星空 観察会！","startDate":"2026-11-21T18:30:00+09:00","location":"さぬきこどもの国"}</script>`;
+    const r = await crawlSource(env.DB, await source(b), deps({ "https://other.jp/list": new Response(html, { headers: { "content-type": "text/html" } }) }));
+    expect(r).toMatchObject({ extracted: 1, dateFound: 1, upserted: 0, duplicates: 1 });
+    expect(await events()).toHaveLength(3);
+  });
+
+  it("JSON-LD は日付が取れなかった分を partial として記録する", async () => {
+    const id = await addSource("https://example.jp/list/", "jsonld");
+    const r = await crawlSource(
+      env.DB,
+      await source(id),
+      deps({ "https://example.jp/list/": new Response(jsonldHtml, { headers: { "content-type": "text/html" } }) }),
+    );
+    expect(r).toMatchObject({ status: "partial", extracted: 3, dateFound: 2, upserted: 2 });
+  });
+
+  it("HTML は Claude で構造化する（LLM 抽出）", async () => {
+    const id = await addSource("https://example.jp/events/", "html");
+    const claude: ClaudeClient = {
+      callTool: vi.fn(async () => ({
+        events: [{ title: "親子リトミック", date_text: "11月10日（火） 10:30～11:15", age_text: "1～3歳と保護者", price_text: "無料", summary: "親子で音楽あそび", url: "/ev/1" }],
+      })),
+    };
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }, claude));
+    expect(r).toMatchObject({ status: "success", type: "html", upserted: 1 });
+    expect((await events())[0]).toMatchObject({ title: "親子リトミック", start_at: "2026-11-10T10:30", source_url: "https://example.jp/ev/1", summary: "親子で音楽あそび" });
+  });
+
+  it("JSON-LD が見つからないページは LLM にフォールバックする", async () => {
+    const id = await addSource("https://example.jp/events/", "jsonld");
+    const claude: ClaudeClient = { callTool: vi.fn(async () => ({ events: [{ title: "工作教室", date_text: "11月15日" }] })) };
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }, claude));
+    expect(r).toMatchObject({ type: "llm", upserted: 1 });
+  });
+
+  it("robots.txt で禁止されたパスは取得せず failed を記録する", async () => {
+    const id = await addSource("https://example.jp/private/cal.ics", "ical");
+    const d = deps({ "https://example.jp/robots.txt": new Response("User-agent: *\nDisallow: /private/") });
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(r.status).toBe("failed");
+    expect(d.fetch).toHaveBeenCalledTimes(1); // robots.txt だけ
+    expect((await runs())[0]).toMatchObject({ status: "failed", error_message: expect.stringContaining("robots.txt") });
+  });
+
+  it("HTML なのに Claude がない・PDF（#8）は failed として記録する", async () => {
+    const id = await addSource("https://example.jp/events/", "html");
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }));
+    expect(r).toMatchObject({ status: "failed", error: expect.stringContaining("ANTHROPIC_API_KEY") });
+
+    const pdf = await addSource("https://example.jp/a.pdf", "pdf");
+    const r2 = await crawlSource(env.DB, await source(pdf), deps({ "https://example.jp/a.pdf": new Response("%PDF-1.7", { headers: { "content-type": "application/pdf" } }) }));
+    expect(r2).toMatchObject({ status: "failed", type: "pdf", error: expect.stringContaining("#8") });
+  });
+
+  it("取得エラーは failed として記録し、例外にしない", async () => {
+    const id = await addSource("https://example.jp/cal.ics", "ical");
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/cal.ics": new Response("x", { status: 500 }) }));
+    expect(r.status).toBe("failed");
+    expect((await runs())[0]).toMatchObject({ status: "failed", error_message: expect.stringContaining("500") });
+  });
+});
+
+describe("crawlAll", () => {
+  it("ng・無効・未承認の収集元と、20 時間以内に取得した収集元は対象外", async () => {
+    const routes = { "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }) };
+    const target = await addSource("https://example.jp/cal.ics", "ical", { policy_status: "caution" });
+    await addSource("https://example.jp/ng.ics", "ical", { policy_status: "ng" });
+    await addSource("https://example.jp/off.ics", "ical", { enabled: 0 });
+    await addSource("https://example.jp/pending.ics", "ical", { status: "pending" });
+
+    const first = await crawlAll(env.DB, deps(routes));
+    expect(first.map((r) => r.sourceId)).toEqual([target]);
+    const second = await crawlAll(env.DB, deps(routes));
+    expect(second).toEqual([]);
+  });
+});

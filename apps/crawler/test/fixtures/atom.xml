@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>イベント</title>
+  <entry>
+    <title>12/5 リトミック教室</title>
+    <link rel="alternate" href="https://example.jp/a/1"/>
+    <summary>1歳から3歳の親子 10:00～11:00</summary>
+  </entry>
+</feed>
