@@ -377,7 +377,7 @@ describe("crawlSource（PDF の一覧ページ）: 抽出済みの PDF は読み
     expect(seen).toContain("https://example.jp/files/m12.pdf");
   });
 
-  it("取得・抽出に失敗した PDF は記録せず、次回に取り直す", async () => {
+  it("取得・抽出に失敗した PDF は次回に取り直す", async () => {
     const id = await addSource(LIST, "pdf");
     const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
     const broken = { "https://example.jp/files/b.pdf": () => new Response("x", { status: 500 }) };
@@ -428,6 +428,23 @@ describe("crawlSource（PDF の一覧ページ）: 抽出済みの PDF は読み
       tries.push(fetchedPdfs(d));
     }
     expect(tries.map((t) => t.includes("https://example.jp/files/gone.pdf"))).toEqual([true, true, true, false]);
+  });
+
+  it("Claude の障害など、取得の 4xx 以外の失敗は何回続いてもあきらめない", async () => {
+    const id = await addSource(LIST, "pdf");
+    let down = true;
+    const claude = {
+      callTool: vi.fn(async () => {
+        if (down) throw new Error("529 overloaded");
+        return { events: [pdfEvents[0]] };
+      }),
+    } satisfies ClaudeClient;
+    for (let i = 0; i < 4; i++) await crawlSource(env.DB, await source(id), deps({ [LIST]: listing("a"), ...pdfRoutes("a") }, claude));
+    down = false;
+    const d = deps({ [LIST]: listing("a"), ...pdfRoutes("a") }, claude);
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(fetchedPdfs(d)).toEqual(["https://example.jp/files/a.pdf"]);
+    expect(r).toMatchObject({ status: "success", extracted: 1 });
   });
 
   it("イベントが 0 件の PDF も抽出済みとして記録し、ほかの PDF が失敗しても次回は読まない", async () => {

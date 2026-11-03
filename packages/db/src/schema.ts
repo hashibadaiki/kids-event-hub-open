@@ -199,7 +199,7 @@ export const rawDocuments = sqliteTable(
 
 /**
  * PDF の一覧ページからたどった PDF。抽出済み（extracted）は次回以降は取得・抽出しない。
- * 失敗（failed）は fail_count を数え、まだ試していない PDF の後に取り直す。一定回数でやめる
+ * 失敗（failed）はまだ試していない PDF の後に取り直す。fail_count は取得の 4xx（リンク切れなど）だけを数え、一定回数でやめる
  */
 export const pdfDocuments = sqliteTable(
   "pdf_documents",

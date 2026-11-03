@@ -61,16 +61,18 @@ export type Collected = {
   warnings: string[];
   /** 一覧ページからたどって抽出できた PDF（URL と件数） */
   pdfs?: { url: string; extracted: number }[];
-  /** 一覧ページからたどって取得・抽出に失敗した PDF */
-  pdfFailures?: { url: string; error: string }[];
+  /** 一覧ページからたどって取得・抽出に失敗した PDF。permanent は取得が 4xx（リンク切れなど）で、取り直しても直らない見込みのもの */
+  pdfFailures?: PdfFailure[];
   /** 一覧ページに新しい PDF がなく、何も抽出しなかった */
   nothingNew?: boolean;
 };
 
 /** PDF の一覧ページで、1 回のクロールで取得・抽出する新しい PDF の上限 */
 export const MAX_NEW_PDFS_PER_RUN = 5;
-/** この回数失敗した PDF は取り直さない */
+/** 取得が 4xx でこの回数失敗した PDF は取り直さない（Claude や相手サイトの一時的な障害は数えない） */
 export const MAX_PDF_FAILURES = 3;
+
+type PdfFailure = { url: string; error: string; permanent: boolean };
 
 export type CollectOptions = {
   /** HTML の LLM 抽出に使う収集元の抽出設定 */
@@ -145,7 +147,8 @@ export async function collect(
         progress.pdfs.push({ url: link, extracted: found.length });
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        progress.pdfFailures.push({ url: link, error });
+        const permanent = e instanceof FetchError && e.status !== null && e.status >= 400 && e.status < 500;
+        progress.pdfFailures.push({ url: link, error, permanent });
         progress.skipped.push(`${link} の取得・抽出に失敗（${error}）`);
       }
     }
@@ -226,7 +229,12 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     result.error = e instanceof Error ? e.message : String(e);
     if (e instanceof RobotsDisallowed) await rejectSource(db, source, e, startedAt);
   }
-  await recordPdfs(db, source.id, runId, result.status === "failed" ? [] : (progress.pdfs ?? []), progress.pdfFailures ?? [], startedAt);
+  try {
+    await recordPdfs(db, source.id, runId, result.status === "failed" ? [] : (progress.pdfs ?? []), progress.pdfFailures ?? [], startedAt);
+  } catch (e) {
+    const note = `PDF の取得結果を記録できませんでした（${e instanceof Error ? e.message : String(e)}）`;
+    result.error = result.error ? `${result.error} / ${note}` : note;
+  }
   result.type = progress.type;
   const fetched = progress.fetched;
 
@@ -258,7 +266,7 @@ async function recordPdfs(
   sourceId: number,
   runId: number,
   extracted: { url: string; extracted: number }[],
-  failed: { url: string; error: string }[],
+  failed: PdfFailure[],
   at: Date,
 ) {
   const statements = [
@@ -276,11 +284,11 @@ async function recordPdfs(
       db
         .prepare(
           `INSERT INTO pdf_documents (source_id, crawl_run_id, url, status, fail_count, last_error, last_tried_at)
-           VALUES (?, ?, ?, 'failed', 1, ?, ?)
+           VALUES (?, ?, ?, 'failed', ?, ?, ?)
            ON CONFLICT (source_id, url) DO UPDATE SET crawl_run_id = excluded.crawl_run_id, status = 'failed',
-             fail_count = pdf_documents.fail_count + 1, last_error = excluded.last_error, last_tried_at = excluded.last_tried_at`,
+             fail_count = pdf_documents.fail_count + excluded.fail_count, last_error = excluded.last_error, last_tried_at = excluded.last_tried_at`,
         )
-        .bind(sourceId, runId, p.url, p.error, at.toISOString()),
+        .bind(sourceId, runId, p.url, p.permanent ? 1 : 0, p.error, at.toISOString()),
     ),
   ];
   if (statements.length > 0) await db.batch(statements);
