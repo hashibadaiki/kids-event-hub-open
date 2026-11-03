@@ -178,6 +178,22 @@ describe("improveSource（改善案 → 検証 → 採否）", () => {
     expect(await evaluations()).toMatchObject([{ decision: "rejected" }]);
   });
 
+  it("少しだけ良くなった改善案は採用せず、人間の確認待ち（pending）として残す", async () => {
+    const id = await seed();
+    const slightly = { events: [POOR.events[0], { ...POOR.events[1], age_text: "小学生" }] };
+    const { claude } = fakeClaude({ improved: slightly });
+    const r = await improveSource(env.DB, id, { claude, now: () => NOW });
+    expect(r.decision).toBe("pending");
+    expect(r.candidate!.score - r.baseline!.score).toBeGreaterThan(0);
+    expect(await configs(id)).toMatchObject([
+      { version: 1, status: "active" },
+      { version: 2, status: "candidate" },
+    ]);
+    const [ev] = await evaluations();
+    expect(ev).toMatchObject({ decision: "pending" });
+    expect(ev!.reason).toContain("人間");
+  });
+
   it("採用後にもう一度回すと、v2 を親にした v3 を作る", async () => {
     const id = await seed();
     await improveSource(env.DB, id, { claude: fakeClaude().claude, now: () => NOW });

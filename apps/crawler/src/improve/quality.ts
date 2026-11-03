@@ -4,7 +4,9 @@ import type { RawEvent } from "../extract/types";
 
 /** これを下回ったら改善ジョブを起動する */
 export const QUALITY_THRESHOLD = 0.7;
-/** 採用に必要な最小の改善幅（スコアの差） */
+/** 自動採用に必要な改善幅（スコアの差。+10pt） */
+export const AUTO_ADOPT_GAIN = 0.1;
+/** これ未満の改善幅は誤差とみなして却下する。これ以上 AUTO_ADOPT_GAIN 未満は人間の確認に回す */
 export const MIN_GAIN = 0.02;
 /** 候補の抽出件数が旧版のこの割合を下回ったら採用しない */
 export const MIN_EXTRACTED_RATIO = 0.8;
@@ -88,21 +90,48 @@ export function needsImprovement(score: number | null | undefined, threshold = Q
   return typeof score === "number" && score < threshold;
 }
 
-/** 新旧のスコアを比べて採否を決める。良くなった場合だけ採用する */
+export type AdoptionDecision = "adopted" | "pending" | "rejected";
+
+/**
+ * 新旧のスコアを比べて採否を決める。
+ * +AUTO_ADOPT_GAIN 以上かつ正しく取れていたイベントを落とさない → 自動採用、MIN_GAIN 以上のそれ以外 → 人間の確認、残り → 却下
+ */
 export function decideAdoption(
   baseline: { score: number; extracted: number },
   candidate: { score: number; extracted: number },
-  opts: { minGain?: number; minExtractedRatio?: number } = {},
-): { adopt: boolean; reason: string } {
+  opts: { lost?: number; minGain?: number; autoAdoptGain?: number; minExtractedRatio?: number } = {},
+): { decision: AdoptionDecision; reason: string } {
   const minGain = opts.minGain ?? MIN_GAIN;
+  const autoGain = opts.autoAdoptGain ?? AUTO_ADOPT_GAIN;
   const ratio = opts.minExtractedRatio ?? MIN_EXTRACTED_RATIO;
+  const lost = opts.lost ?? 0;
   const scores = `スコア ${baseline.score} → ${candidate.score}`;
   if (candidate.extracted < baseline.extracted * ratio) {
-    return { adopt: false, reason: `${scores}。抽出件数が ${baseline.extracted} → ${candidate.extracted} 件に減ったため採用しない` };
+    return { decision: "rejected", reason: `${scores}。抽出件数が ${baseline.extracted} → ${candidate.extracted} 件に減ったため採用しない` };
   }
-  // 浮動小数の誤差で 0.02 ちょうどを落とさないよう丸めて比べる
-  if (round(candidate.score - baseline.score) < minGain) {
-    return { adopt: false, reason: `${scores}。改善幅が ${minGain} 未満のため採用しない` };
+  // 浮動小数の誤差で閾値ちょうどを落とさないよう丸めて比べる
+  const gain = round(candidate.score - baseline.score);
+  if (gain < minGain) {
+    return { decision: "rejected", reason: `${scores}。改善幅が ${minGain} 未満のため採用しない` };
   }
-  return { adopt: true, reason: `${scores}（抽出件数 ${baseline.extracted} → ${candidate.extracted}）` };
+  if (lost > 0) {
+    return { decision: "pending", reason: `${scores}。旧版で正しく取れていたイベントを ${lost} 件落とすため、人間の確認に回す` };
+  }
+  if (gain < autoGain) {
+    return { decision: "pending", reason: `${scores}。改善幅が ${autoGain} 未満のため、人間の確認に回す` };
+  }
+  return { decision: "adopted", reason: `${scores}（抽出件数 ${baseline.extracted} → ${candidate.extracted}）` };
+}
+
+/** 旧版でタイトル・日付・会場がそろって取れていたイベントのうち、新版で見つからないものの数 */
+export function lostEvents(baseline: RawEvent[], candidate: RawEvent[], ctx: Ctx): number {
+  const after = candidate.map((r) => toEventRow(r, ctx)).filter((r): r is EventRow => r !== null);
+  let lost = 0;
+  for (const raw of baseline) {
+    const row = toEventRow(raw, ctx);
+    if (!row || !has(raw.title) || !has(raw.venue)) continue;
+    const c = { title: row.title, start: row.startAt, venue: row.venue };
+    if (!after.some((a) => a.dedupKey === row.dedupKey || isDuplicate({ title: a.title, start: a.startAt, venue: a.venue }, c))) lost++;
+  }
+  return lost;
 }

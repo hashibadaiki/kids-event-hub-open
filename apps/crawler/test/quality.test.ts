@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreExtraction, decideAdoption, needsImprovement, QUALITY_THRESHOLD } from "../src/improve/quality";
+import { scoreExtraction, decideAdoption, lostEvents, needsImprovement, QUALITY_THRESHOLD } from "../src/improve/quality";
 import type { RawEvent } from "../src/extract/types";
 
 const ctx = { prefecture: "香川県", sourceUrl: "https://example.jp/events/", referenceDate: new Date("2026-11-03T00:00:00Z") };
@@ -52,24 +52,57 @@ describe("needsImprovement", () => {
 describe("decideAdoption", () => {
   const base = { score: 0.5, extracted: 10 };
 
-  it("スコアが最小改善幅以上に上がったら採用する", () => {
-    expect(decideAdoption(base, { score: 0.6, extracted: 10 })).toMatchObject({ adopt: true });
-    expect(decideAdoption(base, { score: 0.52, extracted: 10 })).toMatchObject({ adopt: true });
+  it("+0.10 以上に上がり、正しく取れていたイベントを落とさなければ自動採用する", () => {
+    expect(decideAdoption(base, { score: 0.6, extracted: 10 }).decision).toBe("adopted");
+    expect(decideAdoption(base, { score: 0.9, extracted: 10 }, { lost: 0 }).decision).toBe("adopted");
   });
 
-  it("改善幅が小さい・下がった場合は採用しない", () => {
-    expect(decideAdoption(base, { score: 0.51, extracted: 10 })).toMatchObject({ adopt: false });
-    expect(decideAdoption(base, { score: 0.4, extracted: 10 })).toMatchObject({ adopt: false });
+  it("上がったが +0.10 未満なら人間の確認に回す（pending）", () => {
+    const d = decideAdoption(base, { score: 0.55, extracted: 10 });
+    expect(d.decision).toBe("pending");
+    expect(d.reason).toContain("人間");
+    expect(decideAdoption(base, { score: 0.52, extracted: 10 }).decision).toBe("pending");
   });
 
-  it("スコアが上がっても抽出件数が大きく減った場合は採用しない（取りこぼしで率だけ良く見えるのを防ぐ）", () => {
+  it("+0.10 以上でも、正しく取れていたイベントを落とすなら人間の確認に回す", () => {
+    const d = decideAdoption(base, { score: 0.9, extracted: 10 }, { lost: 1 });
+    expect(d.decision).toBe("pending");
+    expect(d.reason).toContain("1 件");
+  });
+
+  it("改善幅が小さい・下がった場合は却下する", () => {
+    expect(decideAdoption(base, { score: 0.51, extracted: 10 }).decision).toBe("rejected");
+    expect(decideAdoption(base, { score: 0.4, extracted: 10 }).decision).toBe("rejected");
+  });
+
+  it("スコアが上がっても抽出件数が大きく減った場合は却下する（取りこぼしで率だけ良く見えるのを防ぐ）", () => {
     const d = decideAdoption(base, { score: 1, extracted: 7 });
-    expect(d.adopt).toBe(false);
+    expect(d.decision).toBe("rejected");
     expect(d.reason).toContain("件数");
-    expect(decideAdoption(base, { score: 1, extracted: 8 }).adopt).toBe(true);
+    expect(decideAdoption(base, { score: 1, extracted: 8 }).decision).toBe("adopted");
   });
 
   it("理由を残す", () => {
     expect(decideAdoption(base, { score: 0.6, extracted: 10 }).reason).toMatch(/0\.5.*0\.6/);
+  });
+});
+
+describe("lostEvents", () => {
+  const ctx = { prefecture: "香川県", sourceUrl: "https://example.jp/", referenceDate: new Date("2026-11-03T00:00:00Z") };
+  const ok = { title: "親子リトミック", dateText: "11月10日 10:30", venue: "多目的室" };
+  const ok2 = { title: "工作教室", dateText: "11月15日 14:00", venue: "工作室" };
+
+  it("旧版で正しく取れていた（タイトル・日付・会場がそろった）イベントが新版にない数を返す", () => {
+    expect(lostEvents([ok, ok2], [ok, ok2], ctx)).toBe(0);
+    expect(lostEvents([ok, ok2], [ok], ctx)).toBe(1);
+    expect(lostEvents([ok, ok2], [], ctx)).toBe(2);
+  });
+
+  it("旧版で欠けていたイベントは数えない", () => {
+    expect(lostEvents([ok, { title: "日付なし", dateText: "未定", venue: "ホール" }, { title: "会場なし", dateText: "11月20日" }], [ok], ctx)).toBe(0);
+  });
+
+  it("表記ゆれ程度の違いは同じイベントとみなす", () => {
+    expect(lostEvents([ok], [{ ...ok, title: "親子リトミック（要予約）" }], ctx)).toBe(0);
   });
 });
