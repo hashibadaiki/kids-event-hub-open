@@ -284,6 +284,13 @@ describe("events", () => {
     });
   });
 
+  it("申込方法（元の表記）を持てる", async () => {
+    const src = await insertSource();
+    const [ins] = await db.insert(events).values(eventValues(src.id, { applyText: "11月1日から電話で受付（先着20組）" })).returning();
+    const [row] = await db.select().from(events).where(eq(events.id, ins.id));
+    expect(row!.applyText).toBe("11月1日から電話で受付（先着20組）");
+  });
+
   it("重複キーは一意（同じイベントを二重に入れない）", async () => {
     const src = await insertSource();
     await db.insert(events).values(eventValues(src.id, { dedupKey: "2026-11-08|紙コップ工作" }));

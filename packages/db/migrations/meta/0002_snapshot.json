@@ -1,158 +1,9 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e691e9a2-3557-4cad-a00d-1e91ebe7fe39",
+  "id": "b29f7936-25d6-467a-ae3a-57f63139471b",
   "prevId": "57b300fe-d3fc-4c29-ac0f-5cafcd8b4186",
   "tables": {
-    "config_evaluations": {
-      "name": "config_evaluations",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "baseline_config_id": {
-          "name": "baseline_config_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "candidate_config_id": {
-          "name": "candidate_config_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "baseline_score": {
-          "name": "baseline_score",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "candidate_score": {
-          "name": "candidate_score",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "baseline_metrics": {
-          "name": "baseline_metrics",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "candidate_metrics": {
-          "name": "candidate_metrics",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "sample_count": {
-          "name": "sample_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "decision": {
-          "name": "decision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "CURRENT_TIMESTAMP"
-        }
-      },
-      "indexes": {
-        "config_evaluations_source_created_idx": {
-          "name": "config_evaluations_source_created_idx",
-          "columns": [
-            "source_id",
-            "created_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "config_evaluations_source_id_sources_id_fk": {
-          "name": "config_evaluations_source_id_sources_id_fk",
-          "tableFrom": "config_evaluations",
-          "tableTo": "sources",
-          "columnsFrom": [
-            "source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "config_evaluations_baseline_config_id_extraction_configs_id_fk": {
-          "name": "config_evaluations_baseline_config_id_extraction_configs_id_fk",
-          "tableFrom": "config_evaluations",
-          "tableTo": "extraction_configs",
-          "columnsFrom": [
-            "baseline_config_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "config_evaluations_candidate_config_id_extraction_configs_id_fk": {
-          "name": "config_evaluations_candidate_config_id_extraction_configs_id_fk",
-          "tableFrom": "config_evaluations",
-          "tableTo": "extraction_configs",
-          "columnsFrom": [
-            "candidate_config_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "config_evaluations_decision_check": {
-          "name": "config_evaluations_decision_check",
-          "value": "\"decision\" IN ('adopted', 'rejected')"
-        }
-      }
-    },
     "crawl_runs": {
       "name": "crawl_runs",
       "columns": {
@@ -237,13 +88,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": 0
-        },
-        "quality_score": {
-          "name": "quality_score",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         },
         "error_message": {
           "name": "error_message",
@@ -446,6 +290,13 @@
         },
         "price_text": {
           "name": "price_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "apply_text": {
+          "name": "apply_text",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -727,109 +578,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "raw_documents": {
-      "name": "raw_documents",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "crawl_run_id": {
-          "name": "crawl_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content_type": {
-          "name": "content_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "fetched_at": {
-          "name": "fetched_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "CURRENT_TIMESTAMP"
-        }
-      },
-      "indexes": {
-        "raw_documents_source_fetched_idx": {
-          "name": "raw_documents_source_fetched_idx",
-          "columns": [
-            "source_id",
-            "fetched_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "raw_documents_source_id_sources_id_fk": {
-          "name": "raw_documents_source_id_sources_id_fk",
-          "tableFrom": "raw_documents",
-          "tableTo": "sources",
-          "columnsFrom": [
-            "source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "raw_documents_crawl_run_id_crawl_runs_id_fk": {
-          "name": "raw_documents_crawl_run_id_crawl_runs_id_fk",
-          "tableFrom": "raw_documents",
-          "tableTo": "crawl_runs",
-          "columnsFrom": [
-            "crawl_run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

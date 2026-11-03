@@ -59,6 +59,7 @@ export function toEventRow(
     priceMinYen: price.minYen ?? (priceFree ? 0 : null),
     priceMaxYen: price.maxYen ?? (priceFree ? 0 : null),
     priceText: raw.priceText ?? null,
+    applyText: raw.applyText ?? null,
     categories: classifyCategory(title, raw.description ?? ""),
     sourceUrl: raw.url ?? ctx.sourceUrl,
     dedupKey: dedupKeyOf(ctx.prefecture, startAt, title),

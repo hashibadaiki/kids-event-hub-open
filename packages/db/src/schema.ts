@@ -162,6 +162,7 @@ export const events = sqliteTable(
     priceMinYen: integer("price_min_yen"),
     priceMaxYen: integer("price_max_yen"),
     priceText: text("price_text"),
+    applyText: text("apply_text"),
     categories: text("categories", { mode: "json" }).notNull().default([]).$type<string[]>(),
     sourceUrl: text("source_url").notNull(),
     dedupKey: text("dedup_key").notNull().unique(),
