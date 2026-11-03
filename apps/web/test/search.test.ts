@@ -158,3 +158,24 @@ describe("matchesQuery: 絞り込み", () => {
     expect(matchesQuery({ ...base, ageMin: 5, ageMax: 5 }, q5)).toBe(true);
   });
 });
+
+describe("matchesQuery: キーワード", () => {
+  const ev = { ...base, title: "親子でLEGO工作", summary: "ブロックで遊ぼう", venue: "サンメッセ香川", city: "高松市" };
+  it("タイトル・概要・会場・市町村のどれかに含まれれば一致（ASCII の大文字小文字は区別しない）", () => {
+    expect(matchesQuery(ev, { ...q, keyword: "工作" })).toBe(true);
+    expect(matchesQuery(ev, { ...q, keyword: "lego" })).toBe(true);
+    expect(matchesQuery(ev, { ...q, keyword: "ブロック" })).toBe(true);
+    expect(matchesQuery(ev, { ...q, keyword: "サンメッセ" })).toBe(true);
+    expect(matchesQuery(ev, { ...q, keyword: "高松" })).toBe(true);
+    expect(matchesQuery(ev, { ...q, keyword: "プラネタリウム" })).toBe(false);
+  });
+  it("空白区切りは AND", () => {
+    expect(matchesQuery(ev, { ...q, keyword: "工作　高松" })).toBe(true);
+    expect(matchesQuery(ev, { ...q, keyword: "工作 丸亀" })).toBe(false);
+  });
+  it("% や _ は文字としてそのまま探す", () => {
+    expect(matchesQuery(ev, { ...q, keyword: "%" })).toBe(false);
+    expect(matchesQuery({ ...ev, title: "50%オフ" }, { ...q, keyword: "50%" })).toBe(true);
+  });
+});
+

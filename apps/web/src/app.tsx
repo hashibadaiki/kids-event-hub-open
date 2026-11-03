@@ -5,6 +5,7 @@ import { prefectureByName, PREFECTURES } from "./prefectures";
 import { HomePage } from "./pages/home";
 import { ListPage } from "./pages/list";
 import { DetailPage } from "./pages/detail";
+import { handleMcp } from "./mcp/server";
 
 export type Bindings = { DB: D1Database };
 
@@ -23,6 +24,19 @@ export function createApp({ repository, now = () => new Date() }: AppOptions) {
     const row = await c.env.DB.prepare("SELECT 1 AS db").first<{ db: number }>();
     return c.json({ ok: true, db: row?.db ?? 0 });
   });
+
+  // MCP サーバー（Streamable HTTP、検索ツールのみ）
+  app.post("/mcp", async (c) => {
+    const res = await handleMcp(await c.req.text(), {
+      repository: repository(c.env),
+      now: now(),
+      origin: new URL(c.req.url).origin,
+    });
+    if (res.body === undefined) return c.body(null, res.status as 202);
+    return c.json(res.body, res.status as 200 | 400);
+  });
+  // サーバーから送る通知はないので、GET の SSE ストリームとセッション削除は提供しない
+  app.on(["GET", "DELETE"], "/mcp", (c) => c.text("Method Not Allowed", 405, { Allow: "POST" }));
 
   // 都道府県一覧（データがある県だけ、北から順）
   app.get("/", async (c) => {
