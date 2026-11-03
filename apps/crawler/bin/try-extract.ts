@@ -23,6 +23,8 @@ try {
       now: () => now,
       sleep: (ms) => new Promise((res) => setTimeout(res, ms)),
     },
+    undefined,
+    { maxNewPdfs: Infinity },
   );
   const rows = out.raws.map((r) => ({ raw: r, row: toEventRow(r, { prefecture: "（確認用）", sourceUrl: url, referenceDate: now }) }));
   for (const { raw, row } of rows) {

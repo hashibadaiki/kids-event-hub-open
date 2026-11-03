@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "dd3aa6f9-74d1-4d1f-b402-42ba8de51803",
+  "id": "6d91b094-24aa-4267-a33e-f7fd47e67289",
   "prevId": "99dc5dea-362c-41e6-9884-d46741a0541c",
   "tables": {
     "config_evaluations": {
@@ -769,15 +769,37 @@
           "notNull": true,
           "autoincrement": false
         },
-        "extracted_count": {
-          "name": "extracted_count",
-          "type": "integer",
+        "status": {
+          "name": "status",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "extracted_at": {
-          "name": "extracted_at",
+        "extracted_count": {
+          "name": "extracted_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fail_count": {
+          "name": "fail_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_tried_at": {
+          "name": "last_tried_at",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -832,7 +854,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "pdf_documents_status_check": {
+          "name": "pdf_documents_status_check",
+          "value": "\"status\" IN ('extracted', 'failed')"
+        }
+      }
     },
     "raw_documents": {
       "name": "raw_documents",
