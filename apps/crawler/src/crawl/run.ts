@@ -1,10 +1,13 @@
 import { isDuplicate } from "@kids-event-hub/core";
 import type { ClaudeClient } from "../claude";
+import type { ExtractionConfig } from "../extract/config";
 import { extractHtml } from "../extract/html";
 import { extractIcal } from "../extract/ical";
 import { extractJsonLd } from "../extract/jsonld";
 import { extractRss } from "../extract/rss";
 import { summarizeEvents } from "../extract/summarize";
+import { ensureActiveConfig, saveRawDocument } from "../improve/configs";
+import { scoreExtraction, type QualityReport } from "../improve/quality";
 import type { RawEvent } from "../extract/types";
 import { detectType } from "./detect";
 import { fetchDocument, FetchError, HostThrottle, isDue, USER_AGENT } from "./fetch";
@@ -33,6 +36,8 @@ export type CrawlResult = {
   dateFound: number;
   upserted: number;
   duplicates: number;
+  /** 抽出品質。取得・抽出に失敗して採点できなかったら null */
+  quality: QualityReport | null;
   error: string | null;
 };
 
@@ -64,6 +69,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     dateFound: 0,
     upserted: 0,
     duplicates: 0,
+    quality: null,
     error: null,
   };
   let fetched = 0;
@@ -78,12 +84,18 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     await throttle.wait(url.host, robots.crawlDelaySec);
     const doc = await fetchDocument(source.url, { fetch: deps.fetch });
     fetched = 1;
+    // 自動改善ループの検証用に生データを残す（公開しない）
+    await saveRawDocument(db, { sourceId: source.id, runId, url: doc.url, contentType: doc.contentType, body: doc.text, fetchedAt: startedAt });
+
+    const config = await ensureActiveConfig(db, source.id, startedAt);
+    await db.prepare("UPDATE crawl_runs SET config_id = ? WHERE id = ?").bind(config.id, runId).run();
 
     const detected = detectType({ contentType: doc.contentType, url: doc.url, body: doc.text });
     result.type = detected;
-    const extracted = await extract(doc.text, doc.url, detected, String(source.type ?? ""), deps.claude);
+    const extracted = await extractDocument(doc.text, doc.url, detected, String(source.type ?? ""), deps.claude, config.config);
     result.type = extracted.type;
     result.extracted = extracted.raws.length;
+    result.quality = scoreExtraction(extracted.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt });
     let raws = extracted.raws;
     if (deps.claude) {
       try {
@@ -112,7 +124,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
   await db
     .prepare(
       `UPDATE crawl_runs SET status = ?, finished_at = ?, duration_ms = ?, fetched_count = ?, extracted_count = ?,
-         date_found_count = ?, upserted_count = ?, error_message = ? WHERE id = ?`,
+         date_found_count = ?, upserted_count = ?, quality_score = ?, error_message = ? WHERE id = ?`,
     )
     .bind(
       result.status,
@@ -122,6 +134,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
       result.extracted,
       result.dateFound,
       result.upserted,
+      result.quality?.score ?? null,
       result.error,
       runId,
     )
@@ -153,12 +166,14 @@ async function fetchRobots(url: URL, deps: CrawlDeps): Promise<RobotsCheck> {
   }
 }
 
-async function extract(
+/** 取得した文書から抽出する。HTML の LLM 抽出には収集元の抽出設定（config）を使う */
+export async function extractDocument(
   text: string,
   url: string,
   detected: ReturnType<typeof detectType>,
   declared: string,
   claude: ClaudeClient | null,
+  config: ExtractionConfig = {},
 ): Promise<{ type: string; raws: RawEvent[] }> {
   switch (detected) {
     case "ical":
@@ -170,17 +185,17 @@ async function extract(
     case "jsonld": {
       const raws = extractJsonLd(text, url);
       if (raws.length > 0) return { type: "jsonld", raws };
-      return { type: "llm", raws: await llm(text, url, claude) };
+      return { type: "llm", raws: await llm(text, url, claude, config) };
     }
     case "html":
       // JSON-LD / iCal / RSS のつもりで登録したのに普通の HTML だった → LLM フォールバック
-      return { type: declared === "html" ? "html" : "llm", raws: await llm(text, url, claude) };
+      return { type: declared === "html" ? "html" : "llm", raws: await llm(text, url, claude, config) };
   }
 }
 
-async function llm(html: string, url: string, claude: ClaudeClient | null): Promise<RawEvent[]> {
+async function llm(html: string, url: string, claude: ClaudeClient | null, config: ExtractionConfig): Promise<RawEvent[]> {
   if (!claude) throw new CrawlError("HTML の抽出には Claude API が必要です（ANTHROPIC_API_KEY 未設定）");
-  return extractHtml(html, url, claude);
+  return extractHtml(html, url, claude, config);
 }
 
 type Existing = { source_id: number; dedup_key: string; title: string; start_at: string; venue: string | null };
