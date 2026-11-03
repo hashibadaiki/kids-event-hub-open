@@ -3,7 +3,7 @@ import { fetchDocument, FetchError, USER_AGENT, HostThrottle, isDue } from "../s
 
 describe("fetchDocument", () => {
   it("連絡先付きの User-Agent で取得する", async () => {
-    const fetchMock = vi.fn(async (_u: string | URL | Request, _i?: RequestInit) =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response("<html>ok</html>", { headers: { "content-type": "text/html; charset=utf-8" } }),
     );
     const doc = await fetchDocument("https://a.jp/x", { fetch: fetchMock });

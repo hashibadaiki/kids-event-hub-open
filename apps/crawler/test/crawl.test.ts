@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import ics from "./fixtures/events.ics?raw";
 import jsonldHtml from "./fixtures/jsonld.html?raw";
 import page from "./fixtures/page.html?raw";
-import { crawlSource, crawlAll, type CrawlDeps } from "../src/crawl/run";
+import { crawlSource, crawlAll, type CrawlDeps, type SourceRow } from "../src/crawl/run";
 import { toEventRow, dedupKeyOf } from "../src/crawl/normalize";
 import type { ClaudeClient } from "../src/claude";
 
@@ -39,7 +39,7 @@ async function addSource(url: string, type = "html", extra: Record<string, unkno
 }
 
 async function source(id: number) {
-  return (await env.DB.prepare("SELECT * FROM sources WHERE id = ?").bind(id).first())!;
+  return (await env.DB.prepare("SELECT * FROM sources WHERE id = ?").bind(id).first())! as SourceRow;
 }
 
 const events = async () =>

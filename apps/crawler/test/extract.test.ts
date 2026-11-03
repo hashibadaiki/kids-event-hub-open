@@ -63,7 +63,7 @@ describe("extractIcal", () => {
         allDay: false,
         dateText: null,
         venue: "さぬきこどもの国",
-        description: "望遠鏡で月と土星を見ます。小学生以上, 無料",
+        description: "望遠鏡で月と土星を見ます。小学生以上, 無料; C:\\x",
         url: "https://example.jp/ev/1",
       },
       {

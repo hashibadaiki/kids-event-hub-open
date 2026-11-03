@@ -12,6 +12,8 @@ description: 収集元（自治体・公共施設のイベントページや PDF
 1. **重複確認**: `sources.yaml` に同じ URL がないか確認する。あれば追加せず、その行を見せて終わる。
 
 2. **robots.txt と利用規約の確認**（CLAUDE.md「収集の方針」）
+   - まず `pnpm check-policy <URL>` を実行する。robots.txt の判定・規約ページの候補・提案（ok / caution / ng）と `policy:` の YAML が出る（`ANTHROPIC_API_KEY` がなければ規約は未判定で caution の提案になるので、規約ページを自分で読んで判定する）
+   - 提案は **確定ではない**。結果をユーザーに見せ、判断に迷うもの（caution・ng・規約ページが見つからない）は登録前に止めてオーナーに確認する
    - `<origin>/robots.txt` を取得し、対象パスが `Disallow` されていないか見る
    - サイトの利用規約・サイトポリシー・著作権のページを探して、自動取得や転載についての記述を読む
    - 判定:
@@ -45,7 +47,8 @@ description: 収集元（自治体・公共施設のイベントページや PDF
    - **本番 D1 への反映（`pnpm sync-sources --remote`）はオーナー作業**。自分では実行せず、コマンドをユーザーに伝える
 
 6. **初回クロール**
-   - クローラー（#7）の実装後: 追加した収集元だけを対象にローカルでクロールし、取れた件数・日付が取れた件数・失敗を報告する
-   - 未実装のうちは「初回クロールは #7 の実装後」と伝えて終わる
+   - `cd apps/crawler && pnpm dev` でローカルのクローラーを起動し、`curl "http://localhost:8787/__scheduled?cron=0+18+*+*+*"` で Cron を起動する（ローカル D1 の approved・有効・ng でない収集元のうち、20 時間以内に取得していないものが対象）
+   - `pnpm exec wrangler d1 execute kids-event-hub --local --command "SELECT * FROM crawl_runs ORDER BY id DESC LIMIT 5"` で、取れた件数（extracted_count）・日付が取れた件数（date_found_count）・保存数・失敗（error_message）を報告する
+   - HTML の収集元は Claude API を使うので、`apps/crawler/.dev.vars` に `ANTHROPIC_API_KEY` が必要。なければその旨を伝える（キーをチャットに貼ってもらわない）。PDF は #8 の実装後
 
 7. **報告**: 追加した行、policy の判定と根拠、同期結果、オーナーに頼むこと（`pnpm sync-sources --remote`）をまとめる。変更は issue のブランチでコミットする（`main` に直接 push しない）

@@ -7,7 +7,7 @@ SUMMARY:星空観察会
 DTSTART;TZID=Asia/Tokyo:20261121T183000
 DTEND;TZID=Asia/Tokyo:20261121T200000
 LOCATION:さぬきこどもの国
-DESCRIPTION:望遠鏡で月と土星を見ます。小学生以上\, 無料
+DESCRIPTION:望遠鏡で月と土星を見ます。小学生以上\, 無料\; C:\\x
 URL:https://example.jp/ev/1
 END:VEVENT
 BEGIN:VEVENT

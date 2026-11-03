@@ -1,0 +1,16 @@
+// クローラーの Worker。Cron Trigger で 1 日 1 回クロールする（デプロイはオーナーが実行）
+{
+  "name": "kids-event-hub-crawler",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-01",
+  // 03:00 JST（UTC 18:00）。前回から 20 時間たっていない収集元はスキップする
+  "triggers": { "crons": ["0 18 * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kids-event-hub",
+      "database_id": "df666d2a-5dd8-4fdd-ae32-0910664efe80",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ]
+}

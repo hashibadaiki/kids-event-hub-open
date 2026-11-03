@@ -23,6 +23,9 @@ importers:
 
   apps/crawler:
     dependencies:
+      '@kids-event-hub/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@kids-event-hub/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -48,6 +51,9 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+      wrangler:
+        specifier: ^4.0.0
+        version: 4.156.0(@cloudflare/workers-types@5.20261101.1)(@types/node@22.20.5)
 
   apps/web:
     dependencies:

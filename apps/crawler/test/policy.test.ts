@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import html from "./fixtures/page.html?raw";
-import { findPolicyLinks, assessPolicy } from "../src/crawl/policy";
+import { findPolicyLinks, assessPolicy, checkPolicy } from "../src/crawl/policy";
 import type { ClaudeClient } from "../src/claude";
 
 const allowed = { allowed: true, crawlDelaySec: null, rule: null };
@@ -78,5 +78,36 @@ describe("assessPolicy", () => {
       null,
     );
     expect(noClaude.proposed).toBe("caution");
+  });
+});
+
+describe("checkPolicy（/add-source 用: 取得 → 判定 → 提案）", () => {
+  it("robots.txt と規約ページを取得して提案を返す", async () => {
+    const routes: Record<string, string> = {
+      "https://example.jp/robots.txt": "User-agent: *\nCrawl-delay: 2",
+      "https://example.jp/events/": html,
+      "https://example.jp/policy/": "<p>当サイトの内容の無断転載を禁じます。</p>",
+      "https://example.jp/copyright.html": "<p>リンクは自由です。</p>",
+    };
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const body = routes[String(input)];
+      return body === undefined ? new Response("", { status: 404 }) : new Response(body, { headers: { "content-type": "text/html" } });
+    });
+    const callTool = vi
+      .fn()
+      .mockResolvedValueOnce({ automated_access: "ambiguous", summary: "無断転載禁止" })
+      .mockResolvedValueOnce({ automated_access: "none", summary: "リンク自由" });
+    const r = await checkPolicy("https://example.jp/events/", { fetch: fetchMock, claude: { callTool }, sleep: async () => {} });
+    expect(r.proposed).toBe("caution");
+    expect(r.robots).toEqual({ allowed: true, crawlDelaySec: 2, rule: null });
+    expect(r.policyUrls).toEqual(["https://example.jp/policy/", "https://example.jp/copyright.html"]);
+    expect((callTool.mock.calls[0]![0] as { prompt: string }).prompt).toContain("無断転載を禁じます");
+  });
+
+  it("robots.txt で禁止ならページも規約も取得しない", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("User-agent: *\nDisallow: /"));
+    const r = await checkPolicy("https://example.jp/events/", { fetch: fetchMock, claude: null, sleep: async () => {} });
+    expect(r.proposed).toBe("ng");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

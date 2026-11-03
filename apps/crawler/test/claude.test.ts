@@ -5,7 +5,7 @@ import html from "./fixtures/page.html?raw";
 
 describe("createClaudeClient", () => {
   it("Messages API に tool を強制して呼び、tool_use の input を返す", async () => {
-    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       Response.json({ content: [{ type: "tool_use", name: "record", input: { ok: 1 } }] }),
     );
     const client = createClaudeClient({ apiKey: "test-key", model: "test-model", fetch: fetchMock });
