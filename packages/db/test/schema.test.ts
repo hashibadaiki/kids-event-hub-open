@@ -14,7 +14,7 @@ const db = drizzle(env.DB);
 
 async function resetTables() {
   // 子テーブルから消す
-  for (const t of ["events", "crawl_runs", "extraction_configs", "sources", "facilities"]) {
+  for (const t of ["config_evaluations", "raw_documents", "events", "crawl_runs", "extraction_configs", "sources", "facilities"]) {
     await env.DB.prepare(`DELETE FROM ${t}`).run();
   }
 }
