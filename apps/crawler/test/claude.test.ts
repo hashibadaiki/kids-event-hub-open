@@ -30,6 +30,29 @@ describe("createClaudeClient", () => {
     });
   });
 
+  it("PDF は document ブロック（base64）として本文より前に渡す", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({ content: [{ type: "tool_use", name: "record", input: {} }] }),
+    );
+    const client = createClaudeClient({ apiKey: "k", model: "m", fetch: fetchMock });
+    await client.callTool({
+      system: "sys",
+      prompt: "読んで",
+      tool: { name: "record", description: "d", inputSchema: { type: "object" } },
+      document: { mediaType: "application/pdf", base64: "JVBERi0=" },
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: "JVBERi0=" } },
+          { type: "text", text: "読んで" },
+        ],
+      },
+    ]);
+  });
+
   it("エラー応答は例外にする（キーはメッセージに含めない）", async () => {
     const client = createClaudeClient({
       apiKey: "secret-key",
