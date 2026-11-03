@@ -19,7 +19,21 @@ https://kids-event-hub.hashiba-baan-daiki.workers.dev （`/healthz` で死活確
 
 ## 使い方
 
-（TODO）収集コマンド、検索サイト、MCP サーバーの使い方。
+（TODO）検索サイト、MCP サーバーの使い方。
+
+### 収集元の管理
+
+収集元は [`sources.yaml`](./sources.yaml) で管理し、同期コマンドで D1 の `sources` テーブルに反映します（正は D1）。
+
+```sh
+pnpm sync-sources --dry-run   # 検証と計画の表示のみ
+pnpm sync-sources             # ローカル D1 に反映
+pnpm sync-sources --remote    # 本番 D1 に反映（オーナーのみ）
+```
+
+- ファイルの行は `submitted_by = owner` / `status = approved` で upsert。クローラーは approved・有効・policy が ng でない行だけを対象にします
+- ファイルから消した行は削除せず無効化（`enabled = false`）。owner 以外の入口から入った行は触りません
+- Claude Code では `/add-source <URL>` で robots.txt・利用規約の確認 → 追記 → 同期まで行います
 
 ### 開発
 
