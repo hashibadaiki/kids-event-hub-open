@@ -38,7 +38,7 @@
 | `guard-bash.mjs` | PreToolUse / Bash | `CLAUDE.md` の「やらないこと」を機械的に止める: `wrangler deploy` / `login` / `secret put` / リソース作成（`d1 create` など）/ `--remote` 付きの D1 操作、`main` への直接 push。止めたときは理由を Claude に返し、Claude は PR 本文の「オーナー作業」に書いて先に進む |
 | `pre-commit-check.mjs` | PreToolUse / Bash | `git commit` の前に `pnpm typecheck && pnpm lint && pnpm test` を走らせ、失敗したらコミットを止める（出力の末尾を Claude に返す） |
 | `migration-notice.mjs` | PostToolUse / Edit・Write | `packages/db/src/schema.ts`・`migrations/` を変えたら注意事項を Claude に返す（`pnpm generate`、本番データへの影響、migration 番号の競合、`--remote` の適用はオーナー作業） |
-| `guard-pr.mjs` | PreToolUse / Bash・GitHub MCP | PR 作成時に本文の `Closes #<番号>` を確認（なければ止める）。PR マージの前は **人間に確認を求める**（`ask`。CI・要件・レビュー指摘・本番への影響のチェックリスト付き） |
+| `guard-pr.mjs` | PreToolUse / Bash・GitHub MCP | PR 作成時に本文の `Closes #<番号>` を確認（なければ止める）。PR マージの前は止めずに **チェックリストを Claude に渡す**（CI・要件・レビュー指摘・運用ルール/本番への影響）。要件を変える・緩める PR、運用ルール・本番データに影響する PR は Claude がマージせずオーナーに回す |
 
 ## MCP
 

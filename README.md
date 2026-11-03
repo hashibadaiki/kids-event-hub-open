@@ -157,11 +157,11 @@ pnpm exec wrangler deploy                          # クローラー（Cron Trig
 | --- | --- | --- |
 | 繰り返す作業を毎回同じ手順で行う | **Skills** | `/add-source`（収集元の追加）、`/crawl`（1 件クロール）、`/improve`（抽出設定の改善）、`/review-pr`（レビューのまとめ） |
 | 役割ごとに文脈と権限を分ける（作った本人と別の目でレビュー・検証） | **サブエージェント** | 開発: `planner` → `implementer` → `reviewer`。運用: `improver` → `verifier`。レビュー役・検証役は書き込みツールなし |
-| ルールを「お願い」ではなく機械的に守らせる | **フック** | `guard-bash`（デプロイ・ログイン・secret・リソース作成・`--remote`・main への push を止める）、`pre-commit-check`（コミット前に typecheck・lint・test）、`migration-notice`（スキーマ変更時の注意）、`guard-pr`（PR の issue 紐付けを確認・マージ前に人間の確認） |
+| ルールを「お願い」ではなく機械的に守らせる | **フック** | `guard-bash`（デプロイ・ログイン・secret・リソース作成・`--remote`・main への push を止める）、`pre-commit-check`（コミット前に typecheck・lint・test）、`migration-notice`（スキーマ変更時の注意）、`guard-pr`（PR の issue 紐付けを確認・マージ前にチェックリストを渡し、要件・運用ルール・本番に触れる PR はオーナーに回す） |
 | 作ったサービスを Claude 自身からも使う | **MCP** | `.mcp.json` に検索 MCP サーバー（`search_events` / `get_event`）を登録。Claude Code から実データを引いてクロール結果を確かめられる |
 | データを Claude で構造化・改善する | **Claude API** | PDF / HTML の構造化、要約、抽出設定の改善案（クローラー内） |
 
-#### ループ 1: 開発ループ（issue → 実装 → レビュー → 人間の承認 → マージ）
+#### ループ 1: 開発ループ（issue → 実装 → レビュー → マージ。要件・運用ルール・本番に触れる PR は人間が承認）
 
 ```mermaid
 flowchart LR
@@ -173,9 +173,11 @@ flowchart LR
   PR -. "Closes #N がない" .-> H2{{"guard-pr で停止"}}
   PR --> CI["CI<br/>typecheck → lint → test"]
   PR --> R["reviewer（/review-pr）<br/>実装を見ていない別エージェント"]
-  CI --> HUMAN(["👤 人間のチェック<br/>マージするか"])
-  R --> HUMAN
-  HUMAN -- 承認 --> MERGE["マージ"]
+  CI --> CK{{"guard-pr のチェックリスト<br/>CI・要件・レビュー指摘・運用ルール/本番への影響"}}
+  R --> CK
+  CK -- "CI グリーン・指摘解消<br/>要件も運用ルールも変えない" --> MERGE["Claude がマージ"]
+  CK -- "要件を変える・緩める<br/>運用ルール・本番データに影響" --> HUMAN(["👤 人間のチェック<br/>マージするか"])
+  HUMAN -- 承認 --> MERGE
   HUMAN -- 差し戻し --> M
   G{{"guard-bash<br/>deploy・secret・--remote・main への push を停止"}} -.-> M
 ```
@@ -203,7 +205,7 @@ flowchart LR
 | チェックポイント | 誰が・どこで | 何を見て判断するか |
 | --- | --- | --- |
 | **着手**（issue に `ready`） | オーナー / GitHub | 要件（ゴール）と「やること」が明確か。依存する issue が片付いているか |
-| **PR のマージ** | オーナー / GitHub（Claude Code ではマージ操作の前に `guard-pr` が確認を求める） | ① CI がグリーン ② issue の「やること」が全部満たされ、要件を緩めていない（PR 本文の「未対応」「判断に迷った点」） ③ `/review-pr` の指摘が解消済み ④ 本番データ・運用ルールへの影響（migration、`CLAUDE.md`・`.claude/` の変更）と「オーナー作業」の内容 |
+| **PR のマージ**（要件を変える・緩める、運用ルール・本番データに影響する PR だけ。それ以外は CI グリーンなら Claude がマージ） | オーナー / GitHub（Claude Code ではマージ操作の前に `guard-pr` がチェックリストを渡し、該当する PR は Claude がマージせず止まる） | ① CI がグリーン ② issue の「やること」が全部満たされ、要件を緩めていない（PR 本文の「未対応」「判断に迷った点」） ③ `/review-pr` の指摘が解消済み ④ 本番データ・運用ルールへの影響（migration、`CLAUDE.md`・`.claude/` の変更）と「オーナー作業」の内容 |
 | **改善案の承認**（`/improve` の判定が human） | オーナー / Claude Code の会話 | ① 前後のスコアと指標（日付・場所・対象年齢の取得率、重複率、欠損率、件数） ② 正解サンプルを落としていないか ③ 差分サンプル（新しく取れた / 取れなくなったイベント）が実際のページと合っているか ④ 過去に却下した案（`docs/improvement-log.md`）の繰り返しでないか |
 | **デプロイ** | オーナー / 手元のターミナル（`wrangler deploy`、`--remote` の migration、`secret put`。Claude は `guard-bash` で実行できない） | ① マージ済みの PR の「オーナー作業」 ② migration を Worker より先に適用する順番 ③ デプロイ後の `/healthz` と検索結果・ダッシュボードの確認 |
 

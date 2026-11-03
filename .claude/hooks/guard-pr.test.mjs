@@ -42,16 +42,17 @@ test("--body-file の中身も見る", () => {
   assert.equal(checkToolCall(bash(`gh api repos/o/r/pulls -f title=x --field "body=@${ng}"`))?.decision, "deny");
 });
 
-test("マージの前に人間の確認を求める", () => {
+test("マージは止めず、オーナーに回す条件付きのチェックリストを渡す", () => {
   for (const input of [
     bash("gh pr merge 32 --merge"),
     bash("gh api -X PUT repos/o/r/pulls/32/merge -f merge_method=merge"),
     { tool_name: "mcp__github__merge_pull_request", tool_input: { owner: "o", repo: "r", pullNumber: 32 } },
   ]) {
     const r = checkToolCall(input);
-    assert.equal(r?.decision, "ask", JSON.stringify(input));
+    assert.equal(r?.decision, "context", JSON.stringify(input));
     assert.match(r.reason, /CI/);
     assert.match(r.reason, /要件/);
+    assert.match(r.reason, /オーナーに確認/);
   }
 });
 
@@ -72,7 +73,10 @@ test("判定を PreToolUse の JSON で返す", () => {
   assert.equal(r.status, 0);
   const out = JSON.parse(r.stdout).hookSpecificOutput;
   assert.equal(out.hookEventName, "PreToolUse");
-  assert.equal(out.permissionDecision, "ask");
+  assert.equal(out.permissionDecision, undefined);
+  assert.match(out.additionalContext, /\[guard-pr\]/);
+  const deny = spawnSync("node", [hook], { input: JSON.stringify(bash("gh pr create --title x --body y")), encoding: "utf8" });
+  assert.equal(JSON.parse(deny.stdout).hookSpecificOutput.permissionDecision, "deny");
   const none = spawnSync("node", [hook], { input: JSON.stringify(bash("ls")), encoding: "utf8" });
   assert.equal(none.stdout, "");
 });
