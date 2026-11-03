@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kids-event-hub": {
+      "type": "http",
+      "url": "https://kids-event-hub.hashiba-baan-daiki.workers.dev/mcp"
+    }
+  }
+}
