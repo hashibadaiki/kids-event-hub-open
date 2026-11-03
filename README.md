@@ -57,16 +57,20 @@ pnpm sync-sources --remote    # 本番 D1 に反映（オーナーのみ）
 
 **削除依頼・お問い合わせ**: [GitHub の issue](https://github.com/hashibadaiki/kids-event-hub-open/issues) でご連絡ください。掲載の停止依頼は速やかに対応し、該当の収集元を無効化します。
 
-**抽出手段の優先順位**: JSON-LD（schema.org/Event）→ iCal → RSS → HTML（Claude で構造化）→ PDF（#8）→ LLM フォールバック（JSON-LD などのつもりで登録したページに見つからなかったとき）。
+**抽出手段の優先順位**: JSON-LD（schema.org/Event）→ iCal → RSS → HTML（Claude で構造化）→ PDF（Claude で構造化）→ LLM フォールバック（JSON-LD などのつもりで登録したページに見つからなかったとき）。
 種別は Content-Type・URL・本文から判定します。抽出したイベントは `packages/core` で日付・年齢・料金・カテゴリを正規化し、重複判定してから `events` に保存します。実行結果（件数・日付が取れた数・保存数・エラー）は `crawl_runs` に記録します。
 
 ```sh
 pnpm check-policy https://example.jp/events/   # robots.txt・規約を確認して policy を提案（書き込まない）
+pnpm try-extract https://example.jp/dayori.pdf  # 取得・抽出して結果と日付取得率を表示（書き込まない。ANTHROPIC_API_KEY が必要）
+pnpm try-extract https://example.jp/kodomo/ pdf # 一覧ページから PDF をたどる場合
 cd apps/crawler && pnpm dev                     # ローカル D1 で起動（--test-scheduled）
 curl "http://localhost:8787/__scheduled?cron=0+18+*+*+*"   # Cron を手動で起動
 ```
 
-HTML の抽出には Claude API を使います。本番では `ANTHROPIC_API_KEY` を Worker の secret に設定します（オーナー作業）。ローカルでは `apps/crawler/.dev.vars` に書きます（コミットしない）。
+**PDF チラシ**: PDF は Claude API にそのまま（document として）渡し、イベントの配列（タイトル・開催日・時間・会場・対象年齢・料金・申込方法・要約）を受け取ります。1 枚に複数のイベントが載った広報や、月間カレンダー形式にも対応し、開催日が複数あるイベントは日付ごとに分けて保存します。掲載元（`source_url`）は PDF の URL です。収集元を `type: pdf` で登録した URL が HTML の一覧ページなら、同じホストの PDF リンク（最大 10 件）をたどり、それぞれ robots.txt も確認します。
+
+HTML・PDF の抽出には Claude API を使います。本番では `ANTHROPIC_API_KEY` を Worker の secret に設定します（オーナー作業）。ローカルでは `apps/crawler/.dev.vars` に書きます（コミットしない）。
 
 ### 検索サイト
 

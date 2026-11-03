@@ -34,6 +34,7 @@ export const SOURCE_STATUSES = ["approved", "pending", "rejected"] as const;
 export const POLICY_STATUSES = ["ok", "caution", "ng"] as const;
 export const CONFIG_STATUSES = ["candidate", "active", "retired", "rejected"] as const;
 export const RUN_STATUSES = ["running", "success", "partial", "failed"] as const;
+export const EVALUATION_DECISIONS = ["adopted", "rejected"] as const;
 
 /** 施設。将来の施設管理者投稿のスコープ単位（今は空でよい） */
 export const facilities = sqliteTable("facilities", {
@@ -122,6 +123,7 @@ export const crawlRuns = sqliteTable(
     extractedCount: integer("extracted_count").notNull().default(0), // イベントとして抽出できた数
     dateFoundCount: integer("date_found_count").notNull().default(0), // うち日付が取れた数
     upsertedCount: integer("upserted_count").notNull().default(0), // events に入れた / 更新した数
+    qualityScore: real("quality_score"), // 抽出品質（0〜1）。採点できなかった（取得失敗など）は null
     errorMessage: text("error_message"),
   },
   (t) => [
@@ -160,6 +162,7 @@ export const events = sqliteTable(
     priceMinYen: integer("price_min_yen"),
     priceMaxYen: integer("price_max_yen"),
     priceText: text("price_text"),
+    applyText: text("apply_text"),
     categories: text("categories", { mode: "json" }).notNull().default([]).$type<string[]>(),
     sourceUrl: text("source_url").notNull(),
     dedupKey: text("dedup_key").notNull().unique(),
@@ -169,5 +172,60 @@ export const events = sqliteTable(
   (t) => [
     index("events_prefecture_start_idx").on(t.prefecture, t.startAt),
     index("events_source_idx").on(t.sourceId),
+  ],
+);
+
+/**
+ * 取得した生データ（HTML などのテキスト）。自動改善ループで新旧の抽出設定を再実行して比べるために残す。
+ * 公開はしない。収集元ごとに新しいものを数件だけ持つ（古いものはクローラーが消す）
+ */
+export const rawDocuments = sqliteTable(
+  "raw_documents",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sourceId: integer("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    crawlRunId: integer("crawl_run_id").references(() => crawlRuns.id, { onDelete: "set null" }),
+    url: text("url").notNull(),
+    contentType: text("content_type"),
+    body: text("body").notNull(),
+    fetchedAt: text("fetched_at").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("raw_documents_source_fetched_idx").on(t.sourceId, t.fetchedAt)],
+);
+
+/** 品質指標（0〜1 の率）。crawler の scoreExtraction の結果 */
+export type QualityMetrics = Record<string, number>;
+
+/**
+ * 自動改善の検証結果（前後比較）。保存済みの生データに対して旧版（baseline）と候補（candidate）で再抽出したスコア
+ */
+export const configEvaluations = sqliteTable(
+  "config_evaluations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sourceId: integer("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    baselineConfigId: integer("baseline_config_id")
+      .notNull()
+      .references(() => extractionConfigs.id, { onDelete: "cascade" }),
+    candidateConfigId: integer("candidate_config_id")
+      .notNull()
+      .references(() => extractionConfigs.id, { onDelete: "cascade" }),
+    baselineScore: real("baseline_score").notNull(),
+    candidateScore: real("candidate_score").notNull(),
+    baselineMetrics: text("baseline_metrics", { mode: "json" }).notNull().$type<QualityMetrics>(),
+    candidateMetrics: text("candidate_metrics", { mode: "json" }).notNull().$type<QualityMetrics>(),
+    sampleCount: integer("sample_count").notNull(), // 検証に使った生データの数
+    decision: text("decision", { enum: EVALUATION_DECISIONS }).notNull(),
+    reason: text("reason"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("config_evaluations_source_created_idx").on(t.sourceId, t.createdAt),
+    check("config_evaluations_decision_check", oneOf("decision", EVALUATION_DECISIONS)),
   ],
 );

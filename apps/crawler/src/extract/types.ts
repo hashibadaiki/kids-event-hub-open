@@ -14,6 +14,7 @@ export type RawEvent = {
   ageText?: string | null;
   priceText?: string | null;
   priceFree?: boolean | null;
+  applyText?: string | null;
   /** 元の説明文。保存はせず、正規化の手がかりと要約の材料にだけ使う */
   description?: string | null;
   /** Claude が書いた要約（転載ではない） */

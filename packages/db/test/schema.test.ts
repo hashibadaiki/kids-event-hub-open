@@ -14,7 +14,7 @@ const db = drizzle(env.DB);
 
 async function resetTables() {
   // 子テーブルから消す
-  for (const t of ["events", "crawl_runs", "extraction_configs", "sources", "facilities"]) {
+  for (const t of ["config_evaluations", "raw_documents", "events", "crawl_runs", "extraction_configs", "sources", "facilities"]) {
     await env.DB.prepare(`DELETE FROM ${t}`).run();
   }
 }
@@ -282,6 +282,13 @@ describe("events", () => {
       city: "高松市",
       sourceUrl: "https://example.jp/event/1",
     });
+  });
+
+  it("申込方法（元の表記）を持てる", async () => {
+    const src = await insertSource();
+    const [ins] = await db.insert(events).values(eventValues(src.id, { applyText: "11月1日から電話で受付（先着20組）" })).returning();
+    const [row] = await db.select().from(events).where(eq(events.id, ins.id));
+    expect(row!.applyText).toBe("11月1日から電話で受付（先着20組）");
   });
 
   it("重複キーは一意（同じイベントを二重に入れない）", async () => {

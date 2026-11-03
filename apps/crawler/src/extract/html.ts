@@ -1,4 +1,5 @@
 import type { ClaudeClient } from "../claude";
+import type { ExtractionConfig } from "./config";
 import { absoluteUrl, stripTags } from "./text";
 import type { RawEvent } from "./types";
 
@@ -46,11 +47,51 @@ const TOOL = {
 type Item = Partial<Record<"title" | "date_text" | "venue" | "age_text" | "price_text" | "summary" | "url", unknown>>;
 const s = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 
-/** HTML の本文テキストを Claude に渡して構造化する（LLM 抽出） */
-export async function extractHtml(html: string, pageUrl: string, claude: ClaudeClient): Promise<RawEvent[]> {
-  const text = htmlToText(html).slice(0, MAX_PROMPT_CHARS);
+/** 抽出設定の指示・ヒントを足したシステムプロンプト */
+export function systemPrompt(config: ExtractionConfig = {}): string {
+  const extra: string[] = [];
+  if (config.instructions) extra.push("", "このページについての指示:", config.instructions);
+  if (config.hints?.length) extra.push("", "ヒント:", ...config.hints.map((h) => `- ${h}`));
+  return [SYSTEM, ...extra].join("\n");
+}
+
+/** セレクタに一致した要素のテキストを集める（Workers の HTMLRewriter）。どれにも一致しない・不正なセレクタなら null */
+export async function selectText(html: string, selectors: string[]): Promise<string | null> {
+  const parts: string[][] = [];
+  for (const selector of selectors) {
+    let current: string[] | null = null;
+    try {
+      await new HTMLRewriter()
+        .on(selector, {
+          element() {
+            current = [];
+            parts.push(current);
+          },
+          text(t) {
+            current?.push(t.text);
+          },
+        })
+        .transform(new Response(html))
+        .text();
+    } catch {
+      // 不正なセレクタは飛ばす
+    }
+  }
+  const text = parts.map((p) => htmlToText(p.join(""))).filter(Boolean).join("\n");
+  return text || null;
+}
+
+/** HTML の本文テキストを Claude に渡して構造化する（LLM 抽出）。config は収集元ごとの抽出設定 */
+export async function extractHtml(
+  html: string,
+  pageUrl: string,
+  claude: ClaudeClient,
+  config: ExtractionConfig = {},
+): Promise<RawEvent[]> {
+  const selected = config.selectors?.length ? await selectText(html, config.selectors) : null;
+  const text = (selected ?? htmlToText(html)).slice(0, MAX_PROMPT_CHARS);
   const prompt = `ページの URL: ${pageUrl}\n\n--- ページ本文（テキスト）---\n${text}`;
-  const out = (await claude.callTool({ system: SYSTEM, prompt, tool: TOOL })) as { events?: Item[] };
+  const out = (await claude.callTool({ system: systemPrompt(config), prompt, tool: TOOL })) as { events?: Item[] };
   const events: RawEvent[] = [];
   for (const item of Array.isArray(out?.events) ? out.events : []) {
     const title = s(item.title);
