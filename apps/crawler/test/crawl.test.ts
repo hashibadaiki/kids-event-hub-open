@@ -81,9 +81,9 @@ describe("toEventRow", () => {
     expect(toEventRow({ title: "休館日のお知らせ", dateText: "館内工事のため休館" }, ctx)).toBeNull();
   });
 
-  it("本文は転載せず、要約がなければ短く切る", () => {
+  it("説明文は転載しない。要約がなければ summary は null", () => {
     const row = toEventRow({ title: "a", start: "2026-11-20", allDay: true, description: "あ".repeat(300) }, ctx);
-    expect(row!.summary!.length).toBeLessThanOrEqual(81);
+    expect(row!.summary).toBeNull();
   });
 });
 
@@ -149,6 +149,37 @@ describe("crawlSource", () => {
       deps({ "https://example.jp/list/": new Response(jsonldHtml, { headers: { "content-type": "text/html" } }) }),
     );
     expect(r).toMatchObject({ status: "partial", extracted: 3, dateFound: 2, upserted: 2 });
+  });
+
+  it("iCal の説明文は Claude で要約して保存し、説明文そのものは保存しない", async () => {
+    const id = await addSource("https://example.jp/cal.ics", "ical");
+    const claude: ClaudeClient = {
+      callTool: vi.fn(async () => ({ summaries: [{ index: 0, summary: "望遠鏡で月と土星を観察します" }] })),
+    };
+    const routes = { "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }) };
+    const r = await crawlSource(env.DB, await source(id), deps(routes, claude));
+    expect(r).toMatchObject({ status: "success", upserted: 3, error: null });
+    const star = (await events()).find((e) => e.title === "星空観察会");
+    expect(star!.summary).toBe("望遠鏡で月と土星を観察します");
+    expect(claude.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("Claude がなければ要約は空のまま保存する（説明文は使わない）", async () => {
+    const id = await addSource("https://example.jp/cal.ics", "ical");
+    const routes = { "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }) };
+    const r = await crawlSource(env.DB, await source(id), deps(routes));
+    expect(r).toMatchObject({ status: "success", upserted: 3 });
+    expect((await events()).every((e) => e.summary === null)).toBe(true);
+  });
+
+  it("要約に失敗してもイベントは保存し、理由を crawl_runs に残す", async () => {
+    const id = await addSource("https://example.jp/cal.ics", "ical");
+    const claude: ClaudeClient = { callTool: vi.fn(async () => Promise.reject(new Error("HTTP 529"))) };
+    const routes = { "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }) };
+    const r = await crawlSource(env.DB, await source(id), deps(routes, claude));
+    expect(r).toMatchObject({ status: "success", upserted: 3 });
+    expect((await events()).every((e) => e.summary === null)).toBe(true);
+    expect((await runs())[0]!.error_message).toContain("要約");
   });
 
   it("HTML は Claude で構造化する（LLM 抽出）", async () => {
