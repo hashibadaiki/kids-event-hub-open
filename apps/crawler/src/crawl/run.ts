@@ -37,6 +37,15 @@ export type CrawlResult = {
 
 class CrawlError extends Error {}
 
+class RobotsDisallowed extends CrawlError {
+  constructor(
+    readonly robotsUrl: string,
+    readonly rule: string,
+  ) {
+    super(`robots.txt（${robotsUrl}）の ${rule} で禁止されているため取得しません`);
+  }
+}
+
 /** 1 つの収集元をクロールし、events に保存して crawl_runs に記録する。失敗しても例外にせず failed を返す */
 export async function crawlSource(db: D1Database, source: SourceRow, deps: CrawlDeps): Promise<CrawlResult> {
   const startedAt = deps.now();
@@ -61,8 +70,9 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
 
   try {
     const url = new URL(source.url);
+    const robotsUrl = `${url.origin}/robots.txt`;
     const robots = await fetchRobots(url, deps);
-    if (!robots.allowed) throw new CrawlError(`robots.txt で禁止されているため取得しません（${robots.rule}）`);
+    if (!robots.allowed) throw new RobotsDisallowed(robotsUrl, robots.rule ?? "Disallow");
 
     await throttle.wait(url.host, robots.crawlDelaySec);
     const doc = await fetchDocument(source.url, { fetch: deps.fetch });
@@ -86,6 +96,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
   } catch (e) {
     result.status = "failed";
     result.error = e instanceof Error ? e.message : String(e);
+    if (e instanceof RobotsDisallowed) await rejectSource(db, source, e, startedAt);
   }
 
   const finishedAt = deps.now();
@@ -107,6 +118,17 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     )
     .run();
   return result;
+}
+
+async function rejectSource(db: D1Database, source: SourceRow, e: RobotsDisallowed, at: Date) {
+  const note = `robots.txt で禁止: ${e.robotsUrl} の ${e.rule} が対象 URL ${source.url} に該当（${at.toISOString()} のクロールで検出）`;
+  await db
+    .prepare(
+      `UPDATE sources SET status = 'rejected', policy_status = 'ng', policy_checked_at = ?, policy_note = ?,
+         updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    )
+    .bind(at.toISOString(), note, source.id)
+    .run();
 }
 
 /** robots.txt を取得して判定する。404 などは「制限なし」、5xx・取得失敗は今回は見送り */
