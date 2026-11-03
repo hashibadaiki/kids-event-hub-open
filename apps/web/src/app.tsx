@@ -1,4 +1,6 @@
 import { Hono, type Context } from "hono";
+import { drizzle } from "drizzle-orm/d1";
+import { dashboardStats } from "@kids-event-hub/db";
 import type { EventRepository } from "./repository";
 import { parseSearch, todayJst } from "./search";
 import { prefectureByName, PREFECTURES } from "./prefectures";
@@ -23,6 +25,21 @@ export function createApp({ repository, now = () => new Date() }: AppOptions) {
   app.get("/healthz/db", async (c) => {
     const row = await c.env.DB.prepare("SELECT 1 AS db").first<{ db: number }>();
     return c.json({ ok: true, db: row?.db ?? 0 });
+  });
+
+  // 運用ダッシュボード（Claude の Dashboard）が読む集計。読み取り専用・公開してよい数字のみ
+  app.get("/api/dashboard", async (c) => {
+    const params = new URL(c.req.url).searchParams;
+    const runLimit = parseLimit(params.get("runs"));
+    const failureLimit = parseLimit(params.get("failures"));
+    if (runLimit === null || failureLimit === null) {
+      return c.text("Bad Request: runs / failures は 1〜200 の整数", 400);
+    }
+    const stats = await dashboardStats(drizzle(c.env.DB), { runLimit, failureLimit });
+    return c.json({ generatedAt: now().toISOString(), ...stats }, 200, {
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "public, max-age=300",
+    });
   });
 
   // MCP サーバー（Streamable HTTP、検索ツールのみ）
@@ -79,4 +96,14 @@ export function createApp({ repository, now = () => new Date() }: AppOptions) {
   app.get("/:pref/:date", (c) => list(c, c.req.param("date")));
 
   return app;
+}
+
+const MAX_LIMIT = 200;
+
+/** 件数パラメータ。未指定は undefined（既定値）、不正は null */
+function parseLimit(value: string | null): number | undefined | null {
+  if (value === null) return undefined;
+  if (!/^\d+$/.test(value)) return null;
+  const n = Number(value);
+  return n >= 1 && n <= MAX_LIMIT ? n : null;
 }
