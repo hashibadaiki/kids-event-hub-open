@@ -35,6 +35,7 @@ export const POLICY_STATUSES = ["ok", "caution", "ng"] as const;
 export const CONFIG_STATUSES = ["candidate", "active", "retired", "rejected"] as const;
 export const RUN_STATUSES = ["running", "success", "partial", "failed"] as const;
 export const EVALUATION_DECISIONS = ["adopted", "pending", "rejected"] as const;
+export const PDF_DOCUMENT_STATUSES = ["extracted", "failed"] as const;
 
 /** 施設。将来の施設管理者投稿のスコープ単位（今は空でよい） */
 export const facilities = sqliteTable("facilities", {
@@ -194,6 +195,32 @@ export const rawDocuments = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [index("raw_documents_source_fetched_idx").on(t.sourceId, t.fetchedAt)],
+);
+
+/**
+ * PDF の一覧ページからたどった PDF。抽出済み（extracted）は次回以降は取得・抽出しない。
+ * 失敗（failed）はまだ試していない PDF の後に取り直す。fail_count は取得の 4xx（リンク切れなど）だけを数え、一定回数でやめる
+ */
+export const pdfDocuments = sqliteTable(
+  "pdf_documents",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sourceId: integer("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    crawlRunId: integer("crawl_run_id").references(() => crawlRuns.id, { onDelete: "set null" }),
+    url: text("url").notNull(),
+    status: text("status", { enum: PDF_DOCUMENT_STATUSES }).notNull(),
+    extractedCount: integer("extracted_count"),
+    failCount: integer("fail_count").notNull().default(0),
+    lastError: text("last_error"),
+    lastTriedAt: text("last_tried_at").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("pdf_documents_source_url_unique").on(t.sourceId, t.url),
+    check("pdf_documents_status_check", oneOf("status", PDF_DOCUMENT_STATUSES)),
+  ],
 );
 
 /** 品質指標（0〜1 の率）。crawler の scoreExtraction の結果 */

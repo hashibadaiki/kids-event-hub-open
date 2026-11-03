@@ -314,6 +314,167 @@ describe("crawlSource", () => {
   });
 });
 
+describe("crawlSource（PDF の一覧ページ）: 抽出済みの PDF は読み直さない", () => {
+  const LIST = "https://example.jp/kodomo/";
+  const listing = (...names: string[]) =>
+    new Response(names.map((n) => `<a href="/files/${n}.pdf">${n}</a>`).join(""), { headers: { "content-type": "text/html" } });
+  const pdfRoutes = (...names: string[]) => Object.fromEntries(names.map((n) => [`https://example.jp/files/${n}.pdf`, pdfResponse]));
+  const fetchedPdfs = (d: ReturnType<typeof deps>) =>
+    d.fetch.mock.calls.map((c) => String(c[0])).filter((u) => u.endsWith(".pdf"));
+
+  it("2 回目は新しく載った PDF だけを取得・抽出する", async () => {
+    const id = await addSource(LIST, "pdf");
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    await crawlSource(env.DB, await source(id), deps({ [LIST]: listing("a"), ...pdfRoutes("a") }, claude));
+    expect(claude.callTool).toHaveBeenCalledTimes(1);
+
+    const d = deps({ [LIST]: listing("a", "b"), ...pdfRoutes("a", "b") }, claude);
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(fetchedPdfs(d)).toEqual(["https://example.jp/files/b.pdf"]);
+    expect(claude.callTool).toHaveBeenCalledTimes(2);
+    expect(r).toMatchObject({ status: "success", type: "pdf", extracted: 1 });
+  });
+
+  it("新しい PDF がなければ PDF を取得せず、成功として記録する（品質は採点しない）", async () => {
+    const id = await addSource(LIST, "pdf");
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    await crawlSource(env.DB, await source(id), deps({ [LIST]: listing("a"), ...pdfRoutes("a") }, claude));
+
+    const d = deps({ [LIST]: listing("a"), ...pdfRoutes("a") }, claude);
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(fetchedPdfs(d)).toEqual([]);
+    expect(claude.callTool).toHaveBeenCalledTimes(1);
+    expect(r).toMatchObject({ status: "success", extracted: 0, quality: null, error: null });
+    expect((await runs())[1]).toMatchObject({ status: "success", quality_score: null });
+  });
+
+  it("1 回に処理する新しい PDF は 5 件まで。残りは次回に回す", async () => {
+    const id = await addSource(LIST, "pdf");
+    const names = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const d1 = deps({ [LIST]: listing(...names), ...pdfRoutes(...names) }, claude);
+    const r1 = await crawlSource(env.DB, await source(id), d1);
+    expect(fetchedPdfs(d1)).toHaveLength(5);
+    expect(r1.status).toBe("success");
+    expect(r1.error).toContain("2 件");
+
+    const d2 = deps({ [LIST]: listing(...names), ...pdfRoutes(...names) }, claude);
+    await crawlSource(env.DB, await source(id), d2);
+    expect(fetchedPdfs(d2)).toEqual(["https://example.jp/files/p6.pdf", "https://example.jp/files/p7.pdf"]);
+  });
+
+  it("古い月の PDF が先頭に並ぶ一覧でも、11 件目以降の新しい PDF に順に届く", async () => {
+    const id = await addSource(LIST, "pdf");
+    const names = Array.from({ length: 12 }, (_, i) => `m${i + 1}`);
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const seen: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const d = deps({ [LIST]: listing(...names), ...pdfRoutes(...names) }, claude);
+      await crawlSource(env.DB, await source(id), d);
+      seen.push(...fetchedPdfs(d));
+    }
+    expect(seen).toHaveLength(12);
+    expect(seen).toContain("https://example.jp/files/m12.pdf");
+  });
+
+  it("取得・抽出に失敗した PDF は次回に取り直す", async () => {
+    const id = await addSource(LIST, "pdf");
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const broken = { "https://example.jp/files/b.pdf": () => new Response("x", { status: 500 }) };
+    await crawlSource(env.DB, await source(id), deps({ [LIST]: listing("a", "b"), ...pdfRoutes("a"), ...broken }, claude));
+
+    const d = deps({ [LIST]: listing("a", "b"), ...pdfRoutes("a", "b") }, claude);
+    await crawlSource(env.DB, await source(id), d);
+    expect(fetchedPdfs(d)).toEqual(["https://example.jp/files/b.pdf"]);
+  });
+
+  it("先頭の PDF が失敗し続けても、まだ試していない後ろの PDF を先に取りに行く", async () => {
+    const id = await addSource(LIST, "pdf");
+    const names = ["x1", "x2", "x3", "x4", "x5", "ok"];
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const r1 = await crawlSource(env.DB, await source(id), deps({ [LIST]: listing(...names), ...pdfRoutes("ok") }, claude));
+    expect(r1.status).toBe("failed");
+
+    const d2 = deps({ [LIST]: listing(...names), ...pdfRoutes("ok") }, claude);
+    const r2 = await crawlSource(env.DB, await source(id), d2);
+    expect(fetchedPdfs(d2)[0]).toBe("https://example.jp/files/ok.pdf");
+    expect(r2.extracted).toBe(1);
+  });
+
+  it("robots.txt で禁止の PDF は 5 件の枠を使わない", async () => {
+    const id = await addSource(LIST, "pdf");
+    const html = [1, 2, 3, 4, 5].map((i) => `<a href="/private/p${i}.pdf">p</a>`).join("") + `<a href="/files/a.pdf">a</a>`;
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const d = deps(
+      {
+        "https://example.jp/robots.txt": new Response("User-agent: *\nDisallow: /private/"),
+        [LIST]: new Response(html, { headers: { "content-type": "text/html" } }),
+        ...pdfRoutes("a"),
+      },
+      claude,
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(fetchedPdfs(d)).toEqual(["https://example.jp/files/a.pdf"]);
+    expect(r).toMatchObject({ status: "partial", extracted: 1 });
+  });
+
+  it("3 回失敗した PDF はあきらめて、以後は取得しない", async () => {
+    const id = await addSource(LIST, "pdf");
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const tries: string[][] = [];
+    for (let i = 0; i < 4; i++) {
+      const d = deps({ [LIST]: listing("a", "gone"), ...pdfRoutes("a") }, claude);
+      await crawlSource(env.DB, await source(id), d);
+      tries.push(fetchedPdfs(d));
+    }
+    expect(tries.map((t) => t.includes("https://example.jp/files/gone.pdf"))).toEqual([true, true, true, false]);
+  });
+
+  it("Claude の障害など、取得の 4xx 以外の失敗は何回続いてもあきらめない", async () => {
+    const id = await addSource(LIST, "pdf");
+    let down = true;
+    const claude = {
+      callTool: vi.fn(async () => {
+        if (down) throw new Error("529 overloaded");
+        return { events: [pdfEvents[0]] };
+      }),
+    } satisfies ClaudeClient;
+    for (let i = 0; i < 4; i++) await crawlSource(env.DB, await source(id), deps({ [LIST]: listing("a"), ...pdfRoutes("a") }, claude));
+    down = false;
+    const d = deps({ [LIST]: listing("a"), ...pdfRoutes("a") }, claude);
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(fetchedPdfs(d)).toEqual(["https://example.jp/files/a.pdf"]);
+    expect(r).toMatchObject({ status: "success", extracted: 1 });
+  });
+
+  it("イベントが 0 件の PDF も抽出済みとして記録し、ほかの PDF が失敗しても次回は読まない", async () => {
+    const id = await addSource(LIST, "pdf");
+    const claude = { callTool: vi.fn(async () => ({ events: [] })) } satisfies ClaudeClient;
+    const r1 = await crawlSource(env.DB, await source(id), deps({ [LIST]: listing("form", "gone"), ...pdfRoutes("form") }, claude));
+    expect(r1).toMatchObject({ status: "partial", extracted: 0 });
+
+    const d2 = deps({ [LIST]: listing("form", "gone"), ...pdfRoutes("form") }, claude);
+    await crawlSource(env.DB, await source(id), d2);
+    expect(fetchedPdfs(d2)).not.toContain("https://example.jp/files/form.pdf");
+  });
+
+  it("collect は上限を指定できる（pnpm try-extract は一覧の PDF をすべて試す）", async () => {
+    const names = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const d = deps({ [LIST]: listing(...names), ...pdfRoutes(...names) }, claude);
+    await collect({ url: LIST, type: "pdf" }, d, undefined, { maxNewPdfs: Infinity });
+    expect(fetchedPdfs(d)).toHaveLength(7);
+  });
+
+  it("PDF 直リンクの収集元は毎回読み直す（同じ URL で差し替わるため）", async () => {
+    const id = await addSource("https://example.jp/dayori.pdf", "pdf");
+    const claude = { callTool: vi.fn(async () => ({ events: pdfEvents })) } satisfies ClaudeClient;
+    await crawlSource(env.DB, await source(id), deps({ "https://example.jp/dayori.pdf": pdfResponse() }, claude));
+    await crawlSource(env.DB, await source(id), deps({ "https://example.jp/dayori.pdf": pdfResponse() }, claude));
+    expect(claude.callTool).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("collect", () => {
   it("DB に書かずに、取得から抽出までの結果を返す（pnpm try-extract 用）", async () => {
     const claude = { callTool: vi.fn(async () => ({ events: pdfEvents })) } satisfies ClaudeClient;
