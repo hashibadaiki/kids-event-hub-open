@@ -52,7 +52,7 @@ pnpm sync-sources --remote    # 本番 D1 に反映（オーナーのみ）
 - 取得頻度は 1 日 1 回程度（前回から 20 時間たっていない収集元は取得しない）。同じホストへは robots.txt の `Crawl-delay`（なければ 1 秒、上限 60 秒）以上あける
 - User-Agent に連絡先を明記: `kids-event-hub-crawler/0.1 (+https://github.com/hashibadaiki/kids-event-hub-open)`
 - 本文は転載せず、要約（Claude が書いたもの、または 80 文字までの抜粋）と元 URL へのリンクのみ載せる
-- クロールのたびに robots.txt を確認し、禁止されたパスは取得しない（`crawl_runs` に failed として記録）
+- クロールのたびに robots.txt を確認し、禁止されたパスは取得しない。その収集元は `status = rejected` / `policy_status = ng` にし、`policy_note` に robots.txt の URL・該当した規則・対象 URL・検出日時を残す（`crawl_runs` にも failed として記録）。sources.yaml で `policy.status: ng` にした収集元も rejected で登録する。rejected は同期しても approved に戻らないので、解除するときは D1 の行を直接直す
 - 1 回の取得はサイズ上限 10MB・タイムアウト 20 秒
 
 **削除依頼・お問い合わせ**: [GitHub の issue](https://github.com/hashibadaiki/kids-event-hub-open/issues) でご連絡ください。掲載の停止依頼は速やかに対応し、該当の収集元を無効化します。
