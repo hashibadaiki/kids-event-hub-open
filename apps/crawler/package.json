@@ -5,9 +5,12 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "test": "vitest run",
-    "sync-sources": "tsx bin/sync-sources.ts"
+    "sync-sources": "tsx bin/sync-sources.ts",
+    "check-policy": "tsx bin/check-policy.ts",
+    "dev": "wrangler dev --test-scheduled"
   },
   "dependencies": {
+    "@kids-event-hub/core": "workspace:*",
     "@kids-event-hub/db": "workspace:*",
     "yaml": "^2.8.0"
   },
@@ -17,6 +20,7 @@
     "@types/node": "^22.0.0",
     "drizzle-orm": "^0.45.0",
     "tsx": "^4.20.0",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "wrangler": "^4.0.0"
   }
 }

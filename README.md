@@ -35,6 +35,39 @@ pnpm sync-sources --remote    # 本番 D1 に反映（オーナーのみ）
 - ファイルから消した行は削除せず無効化（`enabled = false`）。owner 以外の入口から入った行は触りません
 - Claude Code では `/add-source <URL>` で robots.txt・利用規約の確認 → 追記 → 同期まで行います
 
+### 収集方針とクローラー
+
+クローラー（`apps/crawler`）は Cron Trigger で 1 日 1 回（03:00 JST）、クロール対象の収集元を順に取得します。
+
+**収集元ごとの利用条件の確認**（登録前。`pnpm check-policy <URL>` が提案し、オーナーが確定して `sources.yaml` の `policy` に書く）
+
+| 判定 | 基準 | 扱い |
+| --- | --- | --- |
+| `ng` | robots.txt で該当パスが `Disallow`、または利用規約で自動取得・クローラーを明確に禁止 | クロールしない |
+| `caution` | 「無断転載禁止」程度の一般的な注意書き、対象が不明確、規約ページが見つからない | 下記の配慮をした上で取得する。一覧で後から見直す |
+| `ok` | 自動取得・転載についての制限の記述がない | 取得する |
+
+公共・公益性の高い情報は、書き手が自動取得を想定せずに一般的な文言を置いていることが多いため、曖昧な記述は次の配慮をした上で進めます。
+
+- 取得頻度は 1 日 1 回程度（前回から 20 時間たっていない収集元は取得しない）。同じホストへは robots.txt の `Crawl-delay`（なければ 1 秒、上限 60 秒）以上あける
+- User-Agent に連絡先を明記: `kids-event-hub-crawler/0.1 (+https://github.com/hashibadaiki/kids-event-hub-open)`
+- 本文は転載せず、Claude が書いた 100 文字以内の要約と元 URL へのリンクのみ載せる。JSON-LD / iCal / RSS の説明文も Claude で要約する（説明文そのものは保存しない）。API キーがない・要約に失敗したときは要約なしで保存する
+- クロールのたびに robots.txt を確認し、禁止されたパスは取得しない。その収集元は `status = rejected` / `policy_status = ng` にし、`policy_note` に robots.txt の URL・該当した規則・対象 URL・検出日時を残す（`crawl_runs` にも failed として記録）。sources.yaml で `policy.status: ng` にした収集元も rejected で登録する。rejected は同期しても approved に戻らないので、解除するときは D1 の行を直接直す
+- 1 回の取得はサイズ上限 10MB・タイムアウト 20 秒
+
+**削除依頼・お問い合わせ**: [GitHub の issue](https://github.com/hashibadaiki/kids-event-hub-open/issues) でご連絡ください。掲載の停止依頼は速やかに対応し、該当の収集元を無効化します。
+
+**抽出手段の優先順位**: JSON-LD（schema.org/Event）→ iCal → RSS → HTML（Claude で構造化）→ PDF（#8）→ LLM フォールバック（JSON-LD などのつもりで登録したページに見つからなかったとき）。
+種別は Content-Type・URL・本文から判定します。抽出したイベントは `packages/core` で日付・年齢・料金・カテゴリを正規化し、重複判定してから `events` に保存します。実行結果（件数・日付が取れた数・保存数・エラー）は `crawl_runs` に記録します。
+
+```sh
+pnpm check-policy https://example.jp/events/   # robots.txt・規約を確認して policy を提案（書き込まない）
+cd apps/crawler && pnpm dev                     # ローカル D1 で起動（--test-scheduled）
+curl "http://localhost:8787/__scheduled?cron=0+18+*+*+*"   # Cron を手動で起動
+```
+
+HTML の抽出には Claude API を使います。本番では `ANTHROPIC_API_KEY` を Worker の secret に設定します（オーナー作業）。ローカルでは `apps/crawler/.dev.vars` に書きます（コミットしない）。
+
 ### 検索サイト
 
 ログイン不要・モバイル向けの SSR ページ。URL は固定で、そのまま共有できます。
@@ -97,6 +130,9 @@ cd apps/web && pnpm exec wrangler dev   # ローカル D1 で起動
 cd apps/web
 pnpm exec wrangler d1 migrations apply kids-event-hub --remote
 pnpm exec wrangler deploy
+cd ../crawler
+pnpm exec wrangler secret put ANTHROPIC_API_KEY   # 初回のみ
+pnpm exec wrangler deploy                          # クローラー（Cron Trigger）
 ```
 
 ## アーキテクチャ

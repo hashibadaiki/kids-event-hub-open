@@ -1,2 +1,14 @@
 export * from "./sources/file";
 export * from "./sources/sync";
+export * from "./claude";
+export * from "./crawl/robots";
+export * from "./crawl/detect";
+export * from "./crawl/fetch";
+export * from "./crawl/policy";
+export * from "./crawl/normalize";
+export * from "./crawl/run";
+export type { RawEvent } from "./extract/types";
+export { extractJsonLd } from "./extract/jsonld";
+export { extractIcal } from "./extract/ical";
+export { extractRss } from "./extract/rss";
+export { extractHtml, htmlToText } from "./extract/html";

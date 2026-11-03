@@ -152,6 +152,34 @@ describe("planSync + D1", () => {
   });
 });
 
+describe("planSync（rejected の扱い）", () => {
+  const reject = (url: string) =>
+    env.DB.prepare(
+      `UPDATE sources SET status = 'rejected', policy_status = 'ng', policy_checked_at = '2026-11-03T18:00:00.000Z',
+         policy_note = 'robots.txt で禁止' WHERE url = ?`,
+    )
+      .bind(url)
+      .run();
+
+  it("ファイルで policy が ng の収集元は rejected で入る", async () => {
+    await sync([entry({ policy: { status: "ng", checkedAt: "2026-11-03", note: "規約で禁止" } })]);
+    expect((await rows())[0]).toMatchObject({ status: "rejected", policy_status: "ng", policy_note: "規約で禁止" });
+  });
+
+  it("クローラーが rejected にした収集元は、同期しても approved に戻さず理由も残す", async () => {
+    await sync([entry()]);
+    await reject("https://example.jp/miraikan.pdf");
+    await sync([entry({ name: "改名", policy: { status: "ok", checkedAt: "2026-11-04", note: "問題なし" } })]);
+    expect((await rows())[0]).toMatchObject({
+      name: "改名",
+      status: "rejected",
+      policy_status: "ng",
+      policy_checked_at: "2026-11-03T18:00:00.000Z",
+      policy_note: "robots.txt で禁止",
+    });
+  });
+});
+
 describe("planSync（クロール対象との関係）", () => {
   it("同期した行のうち有効なものだけがクロール対象になる", async () => {
     await insertFacilitySource("https://example.jp/facility");

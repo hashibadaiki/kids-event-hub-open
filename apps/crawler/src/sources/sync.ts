@@ -29,7 +29,7 @@ function upsert(e: SourceEntry): string {
     prefecture: lit(e.prefecture),
     enabled: lit(e.enabled),
     submitted_by: lit("owner"),
-    status: lit("approved"),
+    status: lit(e.policy?.status === "ng" ? "rejected" : "approved"),
     policy_status: lit(e.policy?.status ?? null),
     policy_checked_at: lit(e.policy?.checkedAt ?? null),
     policy_note: lit(e.policy?.note ?? null),
@@ -39,11 +39,13 @@ function upsert(e: SourceEntry): string {
     `VALUES (${Object.values(cols).join(", ")})`,
     "ON CONFLICT (url) DO UPDATE SET",
     "  name = excluded.name, type = excluded.type, prefecture = excluded.prefecture,",
-    "  enabled = excluded.enabled, status = 'approved',",
+    "  enabled = excluded.enabled,",
+    // rejected は戻さない（クローラーが robots.txt の禁止を検出して付けたもの。解除は D1 を直接直す）
+    "  status = CASE WHEN sources.status = 'rejected' THEN 'rejected' ELSE excluded.status END,",
     // ファイルで policy を省略したときは D1 の確認結果を残す
-    "  policy_status = coalesce(excluded.policy_status, sources.policy_status),",
-    "  policy_checked_at = coalesce(excluded.policy_checked_at, sources.policy_checked_at),",
-    "  policy_note = coalesce(excluded.policy_note, sources.policy_note),",
+    ...["policy_status", "policy_checked_at", "policy_note"].map(
+      (c) => `  ${c} = CASE WHEN sources.status = 'rejected' THEN sources.${c} ELSE coalesce(excluded.${c}, sources.${c}) END,`,
+    ),
     "  updated_at = CURRENT_TIMESTAMP",
     // 計画の後に別の入口から同じ URL が入っても上書きしない
     "WHERE sources.submitted_by = 'owner'",
