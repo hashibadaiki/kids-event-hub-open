@@ -103,8 +103,7 @@ sources:
     url: https://www.izumi.jp/tenpo/takamatsu/event
     prefecture: 香川県
     type: html
-    enabled: false
-    note: 商業施設。買い物キャンペーン中心で子供向けは少ないため停止中（#14 の検証で自動改善が買い物キャンペーンを拾った）
+    note: 商業施設。買い物キャンペーン中心で子供向けは少ない
     policy:
       status: caution
       checked_at: "2026-11-03"
@@ -113,8 +112,7 @@ sources:
     url: https://www.izumi.jp/tenpo/marugame/event
     prefecture: 香川県
     type: html
-    enabled: false
-    note: 商業施設。買い物キャンペーン中心で子供向けは少ないため停止中（#14 の検証で自動改善が買い物キャンペーンを拾った）
+    note: 商業施設。買い物キャンペーン中心で子供向けは少ない
     policy:
       status: caution
       checked_at: "2026-11-03"
