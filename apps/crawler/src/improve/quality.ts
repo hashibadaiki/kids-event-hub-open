@@ -99,12 +99,13 @@ export type AdoptionDecision = "adopted" | "pending" | "rejected";
 export function decideAdoption(
   baseline: { score: number; extracted: number },
   candidate: { score: number; extracted: number },
-  opts: { lost?: number; minGain?: number; autoAdoptGain?: number; minExtractedRatio?: number } = {},
+  opts: { lost?: number; offTarget?: number; minGain?: number; autoAdoptGain?: number; minExtractedRatio?: number } = {},
 ): { decision: AdoptionDecision; reason: string } {
   const minGain = opts.minGain ?? MIN_GAIN;
   const autoGain = opts.autoAdoptGain ?? AUTO_ADOPT_GAIN;
   const ratio = opts.minExtractedRatio ?? MIN_EXTRACTED_RATIO;
   const lost = opts.lost ?? 0;
+  const offTarget = opts.offTarget ?? 0;
   const scores = `スコア ${baseline.score} → ${candidate.score}`;
   if (candidate.extracted < baseline.extracted * ratio) {
     return { decision: "rejected", reason: `${scores}。抽出件数が ${baseline.extracted} → ${candidate.extracted} 件に減ったため採用しない` };
@@ -114,6 +115,9 @@ export function decideAdoption(
   if (gain < minGain) {
     return { decision: "rejected", reason: `${scores}。改善幅が ${minGain} 未満のため採用しない` };
   }
+  if (offTarget > 0) {
+    return { decision: "pending", reason: `${scores}。旧版になかった子供向けでない項目を ${offTarget} 件新たに抽出するため、人間の確認に回す` };
+  }
   if (lost > 0) {
     return { decision: "pending", reason: `${scores}。旧版で正しく取れていたイベントを ${lost} 件落とすため、人間の確認に回す` };
   }
@@ -121,6 +125,17 @@ export function decideAdoption(
     return { decision: "pending", reason: `${scores}。改善幅が ${autoGain} 未満のため、人間の確認に回す` };
   }
   return { decision: "adopted", reason: `${scores}（抽出件数 ${baseline.extracted} → ${candidate.extracted}）` };
+}
+
+/** 新版で取れた項目のうち、旧版になかったもの。日付が取れない項目はタイトルで比べる */
+export function newEvents(baseline: RawEvent[], candidate: RawEvent[], ctx: Ctx): RawEvent[] {
+  const before = baseline.map((r) => ({ raw: r, row: toEventRow(r, ctx) }));
+  return candidate.filter((raw) => {
+    const row = toEventRow(raw, ctx);
+    if (!row) return !before.some((b) => !b.row && b.raw.title.trim() === raw.title.trim());
+    const c = { title: row.title, start: row.startAt, venue: row.venue };
+    return !before.some((b) => b.row && (b.row.dedupKey === row.dedupKey || isDuplicate({ title: b.row.title, start: b.row.startAt, venue: b.row.venue }, c)));
+  });
 }
 
 /** 旧版でタイトル・日付・会場がそろって取れていたイベントのうち、新版で見つからないものの数 */

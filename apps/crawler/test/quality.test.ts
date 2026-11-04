@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreExtraction, decideAdoption, lostEvents, needsImprovement, QUALITY_THRESHOLD } from "../src/improve/quality";
+import { scoreExtraction, decideAdoption, lostEvents, newEvents, needsImprovement, QUALITY_THRESHOLD } from "../src/improve/quality";
 import type { RawEvent } from "../src/extract/types";
 
 const ctx = { prefecture: "香川県", sourceUrl: "https://example.jp/events/", referenceDate: new Date("2026-11-03T00:00:00Z") };
@@ -70,6 +70,13 @@ describe("decideAdoption", () => {
     expect(d.reason).toContain("1 件");
   });
 
+  it("+0.10 以上でも、子供向けでない項目を新たに拾うなら人間の確認に回す", () => {
+    const d = decideAdoption(base, { score: 0.9, extracted: 10 }, { offTarget: 2 });
+    expect(d.decision).toBe("pending");
+    expect(d.reason).toContain("子供向けでない");
+    expect(d.reason).toContain("2 件");
+  });
+
   it("改善幅が小さい・下がった場合は却下する", () => {
     expect(decideAdoption(base, { score: 0.51, extracted: 10 }).decision).toBe("rejected");
     expect(decideAdoption(base, { score: 0.4, extracted: 10 }).decision).toBe("rejected");
@@ -84,6 +91,23 @@ describe("decideAdoption", () => {
 
   it("理由を残す", () => {
     expect(decideAdoption(base, { score: 0.6, extracted: 10 }).reason).toMatch(/0\.5.*0\.6/);
+  });
+});
+
+describe("newEvents", () => {
+  const ctx = { prefecture: "香川県", sourceUrl: "https://example.jp/", referenceDate: new Date("2026-11-03T00:00:00Z") };
+  const a = { title: "親子リトミック", dateText: "11月10日 10:30", venue: "多目的室" };
+  const b = { title: "プレゼントキャンペーン", dateText: "11月1日" };
+
+  it("旧版になかった項目を返す（表記ゆれ程度は同じとみなす）", () => {
+    expect(newEvents([a], [a, b], ctx)).toEqual([b]);
+    expect(newEvents([a], [{ ...a, title: "親子リトミック（要予約）" }], ctx)).toEqual([]);
+  });
+
+  it("日付が取れない項目はタイトルで比べる", () => {
+    const undated = { title: "工作教室", dateText: "日付不明" };
+    expect(newEvents([undated], [undated], ctx)).toEqual([]);
+    expect(newEvents([], [undated], ctx)).toEqual([undated]);
   });
 });
 
