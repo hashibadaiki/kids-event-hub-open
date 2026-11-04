@@ -13,6 +13,7 @@ import { scoreExtraction, type QualityReport } from "../improve/quality";
 import { detectType } from "./detect";
 import { fetchDocument, FetchError, HostThrottle, isDue, USER_AGENT, type FetchedDocument } from "./fetch";
 import { toEventRow, type EventRow } from "./normalize";
+import { findNextPageLink } from "./pager";
 import { checkRobots, parseRobots, type Robots } from "./robots";
 
 export type CrawlDeps = {
@@ -71,6 +72,8 @@ export type Collected = {
 export const MAX_NEW_PDFS_PER_RUN = 5;
 /** 取得が 4xx でこの回数失敗した PDF は取り直さない（Claude や相手サイトの一時的な障害は数えない） */
 export const MAX_PDF_FAILURES = 3;
+/** HTML の収集元で、「次のページ」をたどって読むページ数の上限（最初のページを含む） */
+export const MAX_HTML_PAGES = 5;
 
 type PdfFailure = { url: string; error: string; permanent: boolean };
 
@@ -158,6 +161,7 @@ export async function collect(
     const extracted = await extractDocument(doc.text, doc.url, detected, declared, deps.claude, options.config);
     progress.type = extracted.type;
     raws = extracted.raws;
+    if (declared === "html") raws.push(...(await followNextPages(doc, url, robotsRules, robotsUrl, throttle, deps, progress, options)));
   }
   progress.raws = raws;
 
@@ -169,6 +173,50 @@ export async function collect(
     }
   }
   return progress;
+}
+
+async function followNextPages(
+  first: FetchedDocument,
+  sourceUrl: URL,
+  robotsRules: Robots | null,
+  robotsUrl: string,
+  throttle: HostThrottle,
+  deps: CrawlDeps,
+  progress: Collected,
+  options: CollectOptions,
+): Promise<RawEvent[]> {
+  const raws: RawEvent[] = [];
+  const visited = new Set([sourceUrl.href, first.url]);
+  let current = first;
+  for (let pages = 1; ; pages++) {
+    const next = findNextPageLink(current.text, current.url);
+    if (!next || visited.has(next) || new URL(next).host !== sourceUrl.host) return raws;
+    if (pages >= MAX_HTML_PAGES) {
+      progress.warnings.push(`次のページ（${next}）以降は、${MAX_HTML_PAGES} ページの上限を超えるため読みません`);
+      return raws;
+    }
+    visited.add(next);
+    const nu = new URL(next);
+    const check = checkRobots(robotsRules, nu.pathname + nu.search, USER_AGENT);
+    if (!check.allowed) {
+      progress.skipped.push(`${next} は robots.txt（${robotsUrl}）の ${check.rule} で禁止のため取得しません`);
+      return raws;
+    }
+    try {
+      await throttle.wait(nu.host, check.crawlDelaySec);
+      const doc = await fetchDocument(next, { fetch: deps.fetch });
+      progress.fetched++;
+      const detected = detectType({ contentType: doc.contentType, url: doc.url, body: doc.text });
+      if (detected !== "html") throw new CrawlError(`HTML ではありません（${detected}）`);
+      await options.onDocument?.(doc);
+      const extracted = await extractDocument(doc.text, doc.url, detected, "html", deps.claude, options.config);
+      raws.push(...extracted.raws);
+      current = doc;
+    } catch (e) {
+      progress.skipped.push(`次のページ（${next}）の取得・抽出に失敗（${e instanceof Error ? e.message : String(e)}）`);
+      return raws;
+    }
+  }
 }
 
 /** 1 つの収集元をクロールし、events に保存して crawl_runs に記録する。失敗しても例外にせず failed を返す */

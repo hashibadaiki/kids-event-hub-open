@@ -4,7 +4,8 @@ import ics from "./fixtures/events.ics?raw";
 import jsonldHtml from "./fixtures/jsonld.html?raw";
 import page from "./fixtures/page.html?raw";
 import flyerDataUrl from "./fixtures/flyer.pdf?inline";
-import { crawlSource, crawlAll, collect, type CrawlDeps, type SourceRow } from "../src/crawl/run";
+import { crawlSource, crawlAll, collect, MAX_HTML_PAGES, type CrawlDeps, type SourceRow } from "../src/crawl/run";
+import { findNextPageLink } from "../src/crawl/pager";
 import { toEventRow, dedupKeyOf } from "../src/crawl/normalize";
 import type { ClaudeClient } from "../src/claude";
 
@@ -472,6 +473,124 @@ describe("crawlSource（PDF の一覧ページ）: 抽出済みの PDF は読み
     await crawlSource(env.DB, await source(id), deps({ "https://example.jp/dayori.pdf": pdfResponse() }, claude));
     await crawlSource(env.DB, await source(id), deps({ "https://example.jp/dayori.pdf": pdfResponse() }, claude));
     expect(claude.callTool).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("findNextPageLink", () => {
+  it("rel=\"next\" のリンクを絶対 URL にして返す", () => {
+    const html = '<div class="s_moreButton"><a class="button" href="?page=2&amp;sort=1" title="次のページへ" rel="next">もっと見る</a></div>';
+    expect(findNextPageLink(html, "https://example.jp/tenpo/event")).toBe("https://example.jp/tenpo/event?page=2&sort=1");
+  });
+
+  it("<link rel=\"next\"> や、rel に複数の値があるリンクも拾う", () => {
+    expect(findNextPageLink('<link rel="next" href="/list/2">', "https://example.jp/list/")).toBe("https://example.jp/list/2");
+    expect(findNextPageLink("<a rel='nofollow next' href='p2.html'>次へ</a>", "https://example.jp/list/")).toBe("https://example.jp/list/p2.html");
+  });
+
+  it("次のページがなければ null", () => {
+    expect(findNextPageLink('<a href="?page=2">2</a><a rel="prev" href="?page=0">前へ</a>', "https://example.jp/")).toBeNull();
+  });
+});
+
+describe("crawlSource（HTML）: 次のページをたどる", () => {
+  const base = "https://example.jp/event";
+  const listPage = (title: string, next?: string) =>
+    new Response(
+      `<html><body><ul><li>【${title}】11月21日（土）</li></ul>${next ? `<a class="button" href="${next}" rel="next">もっと見る</a>` : ""}</body></html>`,
+      { headers: { "content-type": "text/html" } },
+    );
+  const pageClaude = (): ClaudeClient => ({
+    callTool: vi.fn(async ({ prompt, tool }) => {
+      if (tool.name !== "record_events") return { summaries: [] };
+      const titles = [...prompt.matchAll(/【([^】]+)】/g)].map((m) => m[1]);
+      return { events: titles.map((title) => ({ title, date_text: "11月21日（土）" })) };
+    }),
+  });
+  const titles = async () => (await events()).map((e) => e.title).sort();
+
+  it("rel=\"next\" をたどって全ページから抽出し、各ページを生データとして保存する", async () => {
+    const id = await addSource(base, "html");
+    const d = deps(
+      {
+        [base]: listPage("パズル大会", "?page=1"),
+        [`${base}?page=1`]: listPage("わなげ遊び", "?page=2"),
+        [`${base}?page=2`]: listPage("親子えいごあそび"),
+      },
+      pageClaude(),
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(r).toMatchObject({ status: "success", type: "html", extracted: 3, upserted: 3 });
+    expect(await titles()).toEqual(["パズル大会", "わなげ遊び", "親子えいごあそび"].sort());
+    expect((await runs())[0]).toMatchObject({ fetched_count: 3, error_message: null });
+    const raw = await env.DB.prepare("SELECT url FROM raw_documents WHERE source_id = ? ORDER BY id").bind(id).all<{ url: string }>();
+    expect(raw.results.map((x) => x.url)).toEqual([base, `${base}?page=1`, `${base}?page=2`]);
+  });
+
+  it(`たどるのは ${MAX_HTML_PAGES} ページまで。残りがあることを記録する`, async () => {
+    const id = await addSource(base, "html");
+    const routes: Routes = { [base]: listPage("ページ0の工作教室", "?page=1") };
+    for (let i = 1; i <= MAX_HTML_PAGES + 2; i++) routes[`${base}?page=${i}`] = listPage(`${"あいうえおかきくけこ"[i]}の工作教室`, `?page=${i + 1}`);
+    const d = deps(routes, pageClaude());
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(r.extracted).toBe(MAX_HTML_PAGES);
+    expect((await runs())[0]!.fetched_count).toBe(MAX_HTML_PAGES);
+    expect(r.error).toContain("次のページ");
+  });
+
+  it("別のホストや、一度読んだページへのリンクはたどらない", async () => {
+    const id = await addSource(base, "html");
+    const d = deps(
+      {
+        [base]: listPage("パズル大会", "?page=1"),
+        [`${base}?page=1`]: listPage("わなげ遊び", base),
+      },
+      pageClaude(),
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(r).toMatchObject({ status: "success", extracted: 2 });
+
+    const other = await addSource("https://example.jp/other", "html");
+    const d2 = deps({ "https://example.jp/other": listPage("消防フェスタ", "https://evil.example.com/next") }, pageClaude());
+    await crawlSource(env.DB, await source(other), d2);
+    expect(d2.fetch.mock.calls.map((c) => String(c[0]))).not.toContain("https://evil.example.com/next");
+  });
+
+  it("robots.txt で禁止された次のページは取得しない", async () => {
+    const id = await addSource(base, "html");
+    const d = deps(
+      {
+        "https://example.jp/robots.txt": new Response("User-agent: *\nDisallow: /event?page="),
+        [base]: listPage("パズル大会", "?page=1"),
+        [`${base}?page=1`]: listPage("わなげ遊び"),
+      },
+      pageClaude(),
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(r).toMatchObject({ status: "partial", extracted: 1 });
+    expect(r.error).toContain("robots.txt");
+    expect(d.fetch.mock.calls.map((c) => String(c[0]))).not.toContain(`${base}?page=1`);
+  });
+
+  it("2 ページ目以降の取得に失敗しても、それまでのページの分は保存する", async () => {
+    const id = await addSource(base, "html");
+    const d = deps(
+      {
+        [base]: listPage("パズル大会", "?page=1"),
+        [`${base}?page=1`]: () => new Response("error", { status: 500 }),
+      },
+      pageClaude(),
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(r).toMatchObject({ status: "partial", upserted: 1 });
+    expect(r.error).toContain(`${base}?page=1`);
+    expect(await titles()).toEqual(["パズル大会"]);
+  });
+
+  it("type が html 以外の収集元は次のページをたどらない", async () => {
+    const id = await addSource(base, "jsonld");
+    const d = deps({ [base]: listPage("パズル大会", "?page=1"), [`${base}?page=1`]: listPage("わなげ遊び") }, pageClaude());
+    await crawlSource(env.DB, await source(id), d);
+    expect(d.fetch.mock.calls.map((c) => String(c[0]))).not.toContain(`${base}?page=1`);
   });
 });
 
