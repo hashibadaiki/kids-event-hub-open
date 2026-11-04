@@ -86,7 +86,6 @@ export async function assessPolicy(
       system: SYSTEM,
       prompt: `URL: ${page.url}\n\n${page.text.slice(0, MAX_POLICY_CHARS)}`,
       tool: TOOL,
-      maxTokens: 1024,
     })) as { automated_access?: string; summary?: string };
     const a = out?.automated_access;
     findings.push({

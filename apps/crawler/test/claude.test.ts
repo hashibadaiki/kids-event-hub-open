@@ -4,43 +4,54 @@ import { extractHtml, htmlToText } from "../src/extract/html";
 import html from "./fixtures/page.html?raw";
 
 describe("createClaudeClient", () => {
-  it("Messages API に tool を強制して呼び、tool_use の input を返す", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      Response.json({ content: [{ type: "tool_use", name: "record", input: { ok: 1 } }] }),
-    );
+  const schema = {
+    type: "object",
+    properties: {
+      events: { type: "array", items: { type: "object", properties: { title: { type: "string" } }, required: ["title"] } },
+    },
+    required: ["events"],
+  };
+  const tool = { name: "record", description: "イベントを記録する", inputSchema: schema };
+  const textReply = (text: string, extra: Record<string, unknown> = {}) =>
+    Response.json({ stop_reason: "end_turn", content: [{ type: "thinking", thinking: "" }, { type: "text", text }], ...extra });
+
+  it("ツールを強制せず、構造化出力（JSON Schema）で受け取った JSON を返す", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => textReply('{"events":[{"title":"工作"}]}'));
     const client = createClaudeClient({ apiKey: "test-key", model: "test-model", fetch: fetchMock });
-    const out = await client.callTool({
-      system: "sys",
-      prompt: "hello",
-      tool: { name: "record", description: "d", inputSchema: { type: "object" } },
-    });
-    expect(out).toEqual({ ok: 1 });
+    const out = await client.callTool({ system: "sys", prompt: "hello", tool });
+    expect(out).toEqual({ events: [{ title: "工作" }] });
+
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("https://api.anthropic.com/v1/messages");
     const headers = new Headers(init!.headers);
     expect(headers.get("x-api-key")).toBe("test-key");
     expect(headers.get("anthropic-version")).toBe("2023-06-01");
     const body = JSON.parse(init!.body as string);
-    expect(body).toMatchObject({
-      model: "test-model",
-      system: "sys",
-      tool_choice: { type: "tool", name: "record" },
-      tools: [{ name: "record", description: "d", input_schema: { type: "object" } }],
-      messages: [{ role: "user", content: "hello" }],
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.tools).toBeUndefined();
+    expect(body).toMatchObject({ model: "test-model", messages: [{ role: "user", content: "hello" }] });
+    expect(body.system).toContain("sys");
+    expect(body.system).toContain("イベントを記録する");
+    expect(body.output_config.format).toEqual({
+      type: "json_schema",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          events: {
+            type: "array",
+            items: { type: "object", additionalProperties: false, properties: { title: { type: "string" } }, required: ["title"] },
+          },
+        },
+        required: ["events"],
+      },
     });
   });
 
   it("PDF は document ブロック（base64）として本文より前に渡す", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      Response.json({ content: [{ type: "tool_use", name: "record", input: {} }] }),
-    );
+    const fetchMock = vi.fn<typeof fetch>(async () => textReply('{"events":[]}'));
     const client = createClaudeClient({ apiKey: "k", model: "m", fetch: fetchMock });
-    await client.callTool({
-      system: "sys",
-      prompt: "読んで",
-      tool: { name: "record", description: "d", inputSchema: { type: "object" } },
-      document: { mediaType: "application/pdf", base64: "JVBERi0=" },
-    });
+    await client.callTool({ system: "sys", prompt: "読んで", tool, document: { mediaType: "application/pdf", base64: "JVBERi0=" } });
     const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
     expect(body.messages).toEqual([
       {
@@ -59,14 +70,17 @@ describe("createClaudeClient", () => {
       model: "m",
       fetch: async () => new Response('{"error":{"message":"bad"}}', { status: 400 }),
     });
-    const p = client.callTool({ system: "", prompt: "", tool: { name: "t", description: "", inputSchema: {} } });
+    const p = client.callTool({ system: "", prompt: "", tool });
     await expect(p).rejects.toThrow(/400/);
     await expect(p).rejects.not.toThrow(/secret-key/);
   });
 
-  it("tool_use がなければ例外", async () => {
-    const client = createClaudeClient({ apiKey: "k", model: "m", fetch: async () => Response.json({ content: [{ type: "text", text: "no" }] }) });
-    await expect(client.callTool({ system: "", prompt: "", tool: { name: "t", description: "", inputSchema: {} } })).rejects.toThrow(/tool_use/);
+  it("拒否・出力の打ち切り・JSON として読めない応答は例外", async () => {
+    const call = (res: Response) => createClaudeClient({ apiKey: "k", model: "m", fetch: async () => res.clone() }).callTool({ system: "", prompt: "", tool });
+    await expect(call(textReply("", { stop_reason: "refusal" }))).rejects.toThrow(/拒否/);
+    await expect(call(textReply('{"events":[', { stop_reason: "max_tokens" }))).rejects.toThrow(/max_tokens/);
+    await expect(call(textReply("not json"))).rejects.toThrow(/JSON/);
+    await expect(call(Response.json({ stop_reason: "end_turn", content: [] }))).rejects.toThrow(/JSON/);
   });
 });
 
