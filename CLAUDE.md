@@ -9,7 +9,7 @@
 - Cloudflare Workers + D1、Hono、Drizzle、TypeScript
 - CLI は wrangler
 - Claude API（PDF / HTML の構造化、抽出設定の自動改善）
-- MCP サーバー（検索ツールのみ）
+- MCP サーバー（読み取りのみ。イベント検索と運用ダッシュボード用の集計）
 
 ## コマンド
 
