@@ -1,13 +1,17 @@
 # 運用ダッシュボード（#13）
 
 管理画面は自作せず、Claude の Dashboard でクロール結果・抽出品質・自動改善の前後比較を見せる。
-ダッシュボードは公開サイトの読み取り専用 API `GET /api/dashboard` を読む。認証はなく、公開してよい数字だけを返す。
+ダッシュボードは MCP サーバーの `get_dashboard` ツールでデータを読む（#46）。中身は読み取り専用 API `GET /api/dashboard` と同じで、認証はなく、公開してよい数字だけを返す。
 
-## データ: `GET /api/dashboard`
+Claude の Dashboard は外部の URL を直接読めず、データ源は claude.ai に追加したコネクタか添付ファイルに限られる。そのため、自前の MCP サーバーをカスタムコネクタとして追加し、開くたびに最新の集計を読ませる。
+
+## データ: `get_dashboard`（MCP）/ `GET /api/dashboard`
 
 ```
 https://kids-event-hub.hashiba-baan-daiki.workers.dev/api/dashboard
 ```
+
+MCP では `get_dashboard` の引数 `runs` / `failures`、API ではクエリパラメータで件数を指定する。
 
 | パラメータ | 既定 | 内容 |
 | --- | --- | --- |
@@ -38,8 +42,11 @@ https://kids-event-hub.hashiba-baan-daiki.workers.dev/api/dashboard
 
 ## 作り方
 
-`/api/dashboard` が本番にデプロイされたあと（オーナー作業）、Claude で「Dashboard を作って。データは上記 URL の JSON。構成は docs/dashboard.md のとおり」と頼む。
-値はページを開いたときに API から読むので、ダッシュボードに数字を書き写さない。
+1. `get_dashboard` を含む版を本番にデプロイする（オーナー作業）
+2. claude.ai の設定 → コネクタ → 「カスタムコネクタを追加」で `https://kids-event-hub.hashiba-baan-daiki.workers.dev/mcp` を登録する（オーナー作業）
+3. Claude で「Dashboard を作って。データは kids-event-hub コネクタの get_dashboard。構成は docs/dashboard.md のとおり」と頼む
+
+値はページを開いたときにコネクタから読むので、ダッシュボードに数字を書き写さない。見る人それぞれの claude.ai にコネクタの追加が要る。
 
 ## デモ動画で映す場面
 

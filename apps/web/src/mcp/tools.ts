@@ -1,10 +1,11 @@
+import type { DashboardOptions, DashboardStats } from "@kids-event-hub/db";
 import type { EventRecord, EventRepository } from "../repository";
 import { parseSearch, todayJst, type SearchQuery } from "../search";
 import { PREFECTURES, type Prefecture } from "../prefectures";
 import { formatAge, formatPrice, formatWhen, isPdfUrl } from "../format";
 
 /**
- * MCP のツール定義と実装。検索のみ（書き込み系のツールは出さない。#10 の決定事項）
+ * MCP のツール定義と実装。読み取りのみ（書き込み系のツールは出さない。#10 の決定事項）
  * ここにある定義がクライアント（Claude など）から見える契約なので、変えるときはテストも合わせて変える
  */
 
@@ -15,6 +16,7 @@ export const SERVER_INFO = { name: "kids-event-hub", title: "子供向けイベ�
 export const DEFAULT_TOOL_LIMIT = 20;
 export const MAX_TOOL_LIMIT = 50;
 export const MAX_KEYWORD_LENGTH = 100;
+export const MAX_DASHBOARD_LIMIT = 200;
 
 type JsonSchema = Record<string, unknown>;
 
@@ -143,6 +145,33 @@ export const MCP_TOOLS: McpTool[] = [
     },
     annotations: READ_ONLY,
   },
+  {
+    name: "get_dashboard",
+    title: "運用ダッシュボードの集計",
+    description:
+      "クロールの運用状況の集計を返す（GET /api/dashboard と同じ内容）。収集元の数と種別、直近のクロールの件数・抽出成功率・日付取得率、" +
+      "自動改善の前後比較、直近の失敗と原因。比率は分母が 0 のとき null。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        runs: { type: "integer", minimum: 1, maximum: MAX_DASHBOARD_LIMIT, description: "直近のクロールを何件返すか（既定 50）" },
+        failures: { type: "integer", minimum: 1, maximum: MAX_DASHBOARD_LIMIT, description: "直近の失敗を何件返すか（既定 20）" },
+      },
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        generatedAt: { type: "string" },
+        sources: { type: "object" },
+        runs: { type: "array", items: { type: "object" } },
+        configComparisons: { type: "array", items: { type: "object" } },
+        failures: { type: "array", items: { type: "object" } },
+      },
+      required: ["generatedAt", "sources", "runs", "configComparisons", "failures"],
+    },
+    annotations: READ_ONLY,
+  },
 ];
 
 export type ToolContext = {
@@ -150,6 +179,7 @@ export type ToolContext = {
   now: Date;
   /** 詳細ページの URL を作るためのオリジン（例: https://kids-event-hub.example） */
   origin: string;
+  dashboard?: (options: DashboardOptions) => Promise<DashboardStats>;
 };
 
 export type ToolResult =
@@ -278,9 +308,19 @@ async function getEvent(args: Record<string, unknown>, ctx: ToolContext): Promis
   return ok(toDetail(event, ctx.origin));
 }
 
+async function getDashboard(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  checkArgs(args, ["runs", "failures"]);
+  const runLimit = optionalInteger(args, "runs", 1, MAX_DASHBOARD_LIMIT);
+  const failureLimit = optionalInteger(args, "failures", 1, MAX_DASHBOARD_LIMIT);
+  if (!ctx.dashboard) return fail("このサーバーでは集計を返せません");
+  const stats = await ctx.dashboard({ runLimit, failureLimit });
+  return ok({ generatedAt: ctx.now.toISOString(), ...stats });
+}
+
 const HANDLERS: Record<string, (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolResult>> = {
   search_events: searchEvents,
   get_event: getEvent,
+  get_dashboard: getDashboard,
 };
 
 export const hasTool = (name: string) => Object.hasOwn(HANDLERS, name);
