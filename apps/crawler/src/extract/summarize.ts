@@ -42,7 +42,7 @@ export async function summarizeEvents(raws: RawEvent[], claude: ClaudeClient): P
     const prompt = batch
       .map(({ r }, n) => `[${start + n}] ${r.title}\n${r.description!.replace(/\s+/g, " ").trim().slice(0, DESCRIPTION_MAX_CHARS)}`)
       .join("\n\n");
-    const res = (await claude.callTool({ system: SYSTEM, prompt, tool: TOOL, maxTokens: 4096 })) as {
+    const res = (await claude.callTool({ system: SYSTEM, prompt, tool: TOOL })) as {
       summaries?: { index?: unknown; summary?: unknown }[];
     };
     for (const item of Array.isArray(res?.summaries) ? res.summaries : []) {
