@@ -5,7 +5,7 @@ import { parseExtractionConfig, type ExtractionConfig } from "../extract/config"
 import { htmlToText } from "../extract/html";
 import type { RawEvent } from "../extract/types";
 import { ensureActiveConfig, latestRawDocuments, type RawDocument } from "./configs";
-import { decideAdoption, lostEvents, needsImprovement, scoreExtraction, type QualityReport } from "./quality";
+import { decideAdoption, lostEvents, needsImprovement, newEvents, scoreExtraction, type QualityReport } from "./quality";
 
 export { ensureActiveConfig, saveRawDocument, RAW_DOCS_PER_SOURCE } from "./configs";
 
@@ -34,8 +34,54 @@ const SYSTEM = [
   "- instructions: このページの書式に合わせた、抽出担当への具体的な指示（どこに日付・会場・対象が書かれているか）",
   "- hints: 補足のヒント（箇条書き）",
   "- selectors: イベント一覧の部分だけを取り出す CSS セレクタの候補（自信がなければ空にする）",
-  "ページに書かれていない情報を推測で補わせる指示や、イベントでないものを含めさせる指示は書かないでください。",
+  "ページに書かれていない情報を推測で補わせる指示や、イベントでないもの・子供向けでないもの（買い物のキャンペーン、大人向けの講座など）を含めさせる指示は書かないでください。",
 ].join("\n");
+
+/** 新しく取れた項目がこれより多ければ、子供向けかを判定せずに人間の確認に回す */
+const MAX_AUDIENCE_CHECK = 20;
+
+const AUDIENCE_SYSTEM = [
+  "あなたは子供向けイベント情報サイトの掲載可否を判定する担当です。",
+  "各項目が、子供（乳幼児〜高校生）や親子が参加・利用するイベントかを判定してください。",
+  "買い物のキャンペーン・プレゼント企画・SNS 企画・飲食メニューの紹介・大人だけが対象の講座は、子供向けではありません。",
+  "対象が書かれていなくても、内容から子供や親子が参加できるイベントなら子供向けとしてください。",
+].join("\n");
+
+const AUDIENCE_TOOL = {
+  name: "judge_audience",
+  description: "各項目が子供向けのイベントかを判定する",
+  inputSchema: {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            index: { type: "integer", description: "項目の番号" },
+            for_children: { type: "boolean", description: "子供や親子向けのイベントなら true" },
+            reason: { type: "string", description: "判定の理由（30 文字程度）" },
+          },
+          required: ["index", "for_children", "reason"],
+        },
+      },
+    },
+    required: ["items"],
+  },
+};
+
+/** 子供向けでないと判定された項目の数 */
+export async function countOffTarget(events: RawEvent[], claude: ClaudeClient): Promise<number> {
+  if (events.length === 0) return 0;
+  const prompt = events
+    .map((e, i) => `[${i}] ${e.title}${e.ageText ? ` / 対象: ${e.ageText}` : ""}${e.summary ? ` / ${e.summary}` : ""}`)
+    .join("\n");
+  const out = (await claude.callTool({ system: AUDIENCE_SYSTEM, prompt, tool: AUDIENCE_TOOL })) as {
+    items?: { index?: number; for_children?: boolean }[];
+  } | null;
+  const judged = new Map((out?.items ?? []).map((it) => [it.index, it.for_children]));
+  return events.filter((_, i) => judged.get(i) !== true).length;
+}
 
 const TOOL = {
   name: "propose_extraction_config",
@@ -156,7 +202,27 @@ export async function improveSource(db: D1Database, sourceId: number, deps: Impr
 
   const referenceDate = new Date(docs[0]!.fetchedAt);
   const lost = lostEvents(baseline.raws, candidate.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate });
-  const decision = decideAdoption(baseline.report, candidate.report, { lost });
+  let decision = decideAdoption(baseline.report, candidate.report, { lost });
+  if (decision.decision === "adopted") {
+    const ctx = { prefecture: source.prefecture, sourceUrl: source.url, referenceDate };
+    const added = newEvents(baseline.raws, candidate.raws, ctx);
+    try {
+      if (added.length > MAX_AUDIENCE_CHECK) {
+        decision = {
+          decision: "pending",
+          reason: `${decision.reason}。新たに取れた項目が ${added.length} 件と多く、子供向けかを判定しきれないため、人間の確認に回す`,
+        };
+      } else {
+        const offTarget = await countOffTarget(added, claude);
+        decision = decideAdoption(baseline.report, candidate.report, { lost, offTarget });
+      }
+    } catch (e) {
+      decision = {
+        decision: "pending",
+        reason: `${decision.reason}。子供向けかを判定できなかったため、人間の確認に回す（${e instanceof Error ? e.message : String(e)}）`,
+      };
+    }
+  }
   const candidateStatus = decision.decision === "pending" ? "candidate" : "rejected";
   const statements =
     decision.decision === "adopted"

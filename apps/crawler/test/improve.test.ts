@@ -41,12 +41,16 @@ const PROPOSAL = {
   reason: "会場と対象年齢の取りこぼしが多いため、書式のヒントを足す",
 };
 
-function fakeClaude(opts: { proposal?: unknown; improved?: unknown } = {}) {
+function fakeClaude(opts: { proposal?: unknown; improved?: unknown; offTarget?: number[] } = {}) {
   const calls: { tool: string; system: string; prompt: string }[] = [];
   const claude: ClaudeClient = {
     callTool: vi.fn(async ({ system, prompt, tool }: { system: string; prompt: string; tool: ToolSpec }) => {
       calls.push({ tool: tool.name, system, prompt });
       if (tool.name === "propose_extraction_config") return opts.proposal ?? PROPOSAL;
+      if (tool.name === "judge_audience") {
+        const n = (prompt.match(/^\[\d+\]/gm) ?? []).length;
+        return { items: Array.from({ length: n }, (_, i) => ({ index: i, for_children: !(opts.offTarget ?? []).includes(i), reason: "" })) };
+      }
       if (tool.name === "record_events") return system.includes("会場は「会場：」") ? (opts.improved ?? GOOD) : POOR;
       return { summaries: [] };
     }),
@@ -164,6 +168,55 @@ describe("improveSource（改善案 → 検証 → 採否）", () => {
     const [ev] = await evaluations();
     expect(ev).toMatchObject({ source_id: id, baseline_config_id: v1!.id, candidate_config_id: v2!.id, decision: "adopted", sample_count: 1 });
     expect(JSON.parse(ev!.candidate_metrics as string)).toMatchObject({ venueRate: 1 });
+  });
+
+  it("新たに拾った項目に子供向けでないものがあれば、自動採用せず人間の確認に回す", async () => {
+    const id = await seed();
+    const { claude, calls } = fakeClaude({ offTarget: [0] });
+    const r = await improveSource(env.DB, id, { claude, now: () => NOW });
+    expect(r.decision).toBe("pending");
+    expect(r.reason).toContain("子供向けでない");
+    expect(await configs(id)).toMatchObject([
+      { version: 1, status: "active" },
+      { version: 2, status: "candidate" },
+    ]);
+    expect(await evaluations()).toMatchObject([{ decision: "pending", reason: expect.stringContaining("子供向けでない") }]);
+    expect(calls.find((c) => c.tool === "propose_extraction_config")!.system).toContain("子供向けでないもの");
+    const judge = calls.find((c) => c.tool === "judge_audience")!;
+    expect(judge.prompt).toContain("どんぐりごま");
+    expect(judge.prompt).not.toContain("[1]");
+  });
+
+  it("新たに取れた項目が 20 件を超えたら、判定せずに人間の確認に回す", async () => {
+    const id = await seed();
+    const many = {
+      events: Array.from({ length: 25 }, (_, i) => ({ title: `イベント${i + 1}`, date_text: `11月${i + 1}日 10:00`, venue: "ホール", age_text: "小学生" })),
+    };
+    const { claude, calls } = fakeClaude({ improved: many });
+    const r = await improveSource(env.DB, id, { claude, now: () => NOW });
+    expect(r.decision).toBe("pending");
+    expect(r.reason).toContain("25 件");
+    expect(calls.some((c) => c.tool === "judge_audience")).toBe(false);
+  });
+
+  it("子供向けかを判定できなければ、自動採用せず人間の確認に回す", async () => {
+    const id = await seed();
+    const { claude } = fakeClaude();
+    const base = claude.callTool;
+    claude.callTool = vi.fn(async (args: Parameters<ClaudeClient["callTool"]>[0]) => {
+      if (args.tool.name === "judge_audience") throw new Error("overloaded");
+      return base(args);
+    });
+    const r = await improveSource(env.DB, id, { claude, now: () => NOW });
+    expect(r.decision).toBe("pending");
+    expect(r.reason).toContain("判定できなかった");
+  });
+
+  it("良くならなければ子供向けの判定はせずに却下する", async () => {
+    const id = await seed();
+    const { claude, calls } = fakeClaude({ improved: POOR });
+    await improveSource(env.DB, id, { claude, now: () => NOW });
+    expect(calls.some((c) => c.tool === "judge_audience")).toBe(false);
   });
 
   it("良くならなければ採用しない（候補は rejected、旧版は active のまま）", async () => {
