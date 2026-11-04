@@ -37,7 +37,7 @@ const SYSTEM = [
   "ページに書かれていない情報を推測で補わせる指示や、イベントでないもの・子供向けでないもの（買い物のキャンペーン、大人向けの講座など）を含めさせる指示は書かないでください。",
 ].join("\n");
 
-/** 新しく取れた項目のうち、子供向けかを判定する数の上限 */
+/** 新しく取れた項目がこれより多ければ、子供向けかを判定せずに人間の確認に回す */
 const MAX_AUDIENCE_CHECK = 20;
 
 const AUDIENCE_SYSTEM = [
@@ -72,16 +72,15 @@ const AUDIENCE_TOOL = {
 
 /** 子供向けでないと判定された項目の数 */
 export async function countOffTarget(events: RawEvent[], claude: ClaudeClient): Promise<number> {
-  const targets = events.slice(0, MAX_AUDIENCE_CHECK);
-  if (targets.length === 0) return 0;
-  const prompt = targets
+  if (events.length === 0) return 0;
+  const prompt = events
     .map((e, i) => `[${i}] ${e.title}${e.ageText ? ` / 対象: ${e.ageText}` : ""}${e.summary ? ` / ${e.summary}` : ""}`)
     .join("\n");
   const out = (await claude.callTool({ system: AUDIENCE_SYSTEM, prompt, tool: AUDIENCE_TOOL })) as {
     items?: { index?: number; for_children?: boolean }[];
   } | null;
   const judged = new Map((out?.items ?? []).map((it) => [it.index, it.for_children]));
-  return targets.filter((_, i) => judged.get(i) !== true).length;
+  return events.filter((_, i) => judged.get(i) !== true).length;
 }
 
 const TOOL = {
@@ -206,9 +205,17 @@ export async function improveSource(db: D1Database, sourceId: number, deps: Impr
   let decision = decideAdoption(baseline.report, candidate.report, { lost });
   if (decision.decision === "adopted") {
     const ctx = { prefecture: source.prefecture, sourceUrl: source.url, referenceDate };
+    const added = newEvents(baseline.raws, candidate.raws, ctx);
     try {
-      const offTarget = await countOffTarget(newEvents(baseline.raws, candidate.raws, ctx), claude);
-      decision = decideAdoption(baseline.report, candidate.report, { lost, offTarget });
+      if (added.length > MAX_AUDIENCE_CHECK) {
+        decision = {
+          decision: "pending",
+          reason: `${decision.reason}。新たに取れた項目が ${added.length} 件と多く、子供向けかを判定しきれないため、人間の確認に回す`,
+        };
+      } else {
+        const offTarget = await countOffTarget(added, claude);
+        decision = decideAdoption(baseline.report, candidate.report, { lost, offTarget });
+      }
     } catch (e) {
       decision = {
         decision: "pending",

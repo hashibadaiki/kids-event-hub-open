@@ -180,9 +180,23 @@ describe("improveSource（改善案 → 検証 → 採否）", () => {
       { version: 1, status: "active" },
       { version: 2, status: "candidate" },
     ]);
+    expect(await evaluations()).toMatchObject([{ decision: "pending", reason: expect.stringContaining("子供向けでない") }]);
+    expect(calls.find((c) => c.tool === "propose_extraction_config")!.system).toContain("子供向けでないもの");
     const judge = calls.find((c) => c.tool === "judge_audience")!;
     expect(judge.prompt).toContain("どんぐりごま");
     expect(judge.prompt).not.toContain("[1]");
+  });
+
+  it("新たに取れた項目が 20 件を超えたら、判定せずに人間の確認に回す", async () => {
+    const id = await seed();
+    const many = {
+      events: Array.from({ length: 25 }, (_, i) => ({ title: `イベント${i + 1}`, date_text: `11月${i + 1}日 10:00`, venue: "ホール", age_text: "小学生" })),
+    };
+    const { claude, calls } = fakeClaude({ improved: many });
+    const r = await improveSource(env.DB, id, { claude, now: () => NOW });
+    expect(r.decision).toBe("pending");
+    expect(r.reason).toContain("25 件");
+    expect(calls.some((c) => c.tool === "judge_audience")).toBe(false);
   });
 
   it("子供向けかを判定できなければ、自動採用せず人間の確認に回す", async () => {
