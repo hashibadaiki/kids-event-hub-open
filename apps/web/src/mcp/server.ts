@@ -12,7 +12,7 @@ import {
 /**
  * MCP（Streamable HTTP トランスポート）の最小実装。
  * - ステートレス: セッション ID を発行せず、POST 1 回に JSON 1 つで応答する（SSE は使わない）
- * - 提供するのは tools（search_events / get_event）だけ
+ * - 提供するのは tools（search_events / get_event / get_dashboard）だけ
  * SDK を使わないのは、Workers 上で依存を増やさずに済み、やりとりをテストで固定しやすいため
  */
 

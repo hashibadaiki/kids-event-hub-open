@@ -42,12 +42,13 @@ export function createApp({ repository, now = () => new Date() }: AppOptions) {
     });
   });
 
-  // MCP サーバー（Streamable HTTP、検索ツールのみ）
+  // MCP サーバー（Streamable HTTP、読み取りのツールのみ）
   app.post("/mcp", async (c) => {
     const res = await handleMcp(await c.req.text(), {
       repository: repository(c.env),
       now: now(),
       origin: new URL(c.req.url).origin,
+      dashboard: (options) => dashboardStats(drizzle(c.env.DB), options),
     });
     if (res.body === undefined) return c.body(null, res.status as 202);
     return c.json(res.body, res.status as 200 | 400);

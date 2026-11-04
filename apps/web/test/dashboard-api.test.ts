@@ -67,3 +67,53 @@ describe("GET /api/dashboard", () => {
     expect(res.status).toBe(404);
   });
 });
+
+async function mcp(method: string, params?: unknown) {
+  const res = await app.request(
+    "/mcp",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    },
+    env,
+  );
+  expect(res.status).toBe(200);
+  return (await res.json()) as { result?: { isError?: boolean; structuredContent?: DashboardBody; content: { text: string }[]; tools?: { name: string; annotations: Record<string, unknown> }[] } };
+}
+
+describe("MCP の get_dashboard（Claude の Dashboard のデータ源）", () => {
+  it("tools/list に読み取り専用のツールとして出る", async () => {
+    const json = await mcp("tools/list");
+    const tool = json.result!.tools!.find((t) => t.name === "get_dashboard");
+    expect(tool?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+  });
+
+  it("/api/dashboard と同じ集計を返す", async () => {
+    await seed();
+    const result = (await mcp("tools/call", { name: "get_dashboard", arguments: {} })).result!;
+    expect(result.isError).toBeUndefined();
+    const body = result.structuredContent!;
+    expect(body.generatedAt).toEqual(expect.any(String));
+    expect(body.sources).toMatchObject({ total: 1, pdfOnly: 1, pdfOnlyRate: 1, structured: 0 });
+    expect(body.runs).toHaveLength(3);
+    expect(body.failures).toEqual([expect.objectContaining({ status: "failed", errorMessage: "HTTP 503" })]);
+    expect(JSON.parse(result.content[0]!.text)).toEqual(body);
+
+    const api = (await (await app.request("/api/dashboard", {}, env)).json()) as DashboardBody;
+    expect({ ...body, generatedAt: null }).toEqual({ ...api, generatedAt: null });
+  });
+
+  it("runs / failures で件数を絞れる", async () => {
+    await seed();
+    const body = (await mcp("tools/call", { name: "get_dashboard", arguments: { runs: 1, failures: 1 } })).result!.structuredContent!;
+    expect(body.runs).toHaveLength(1);
+    expect(body.failures).toHaveLength(1);
+  });
+
+  it.each([0, 201, 1.5, "10"])("件数が 1〜200 の整数でなければエラー（runs=%s）", async (v) => {
+    const result = (await mcp("tools/call", { name: "get_dashboard", arguments: { runs: v } })).result!;
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain("runs");
+  });
+});

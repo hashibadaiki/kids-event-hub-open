@@ -75,7 +75,7 @@ HTML・PDF の抽出には Claude API を使います。本番では `ANTHROPIC_
 ### 運用ダッシュボード
 
 クロール結果・抽出品質・自動改善の前後比較は Claude の Dashboard で見ます（管理画面は自作しません）。
-データは読み取り専用の `GET /api/dashboard`（JSON、認証なし、公開してよい集計のみ）。構成とデモで映す場面は [docs/dashboard.md](./docs/dashboard.md)。
+データは MCP の `get_dashboard`（中身は読み取り専用の `GET /api/dashboard` と同じ。認証なし、公開してよい集計のみ）。構成とデモで映す場面は [docs/dashboard.md](./docs/dashboard.md)。
 
 ### 検索サイト
 
@@ -91,7 +91,7 @@ HTML・PDF の抽出には Claude API を使います。本番では `ANTHROPIC_
 
 ### MCP サーバー（Claude から検索する）
 
-検索サイトと同じデータを、MCP（Model Context Protocol）のツールとして提供します。**検索のみ**で、書き込み系のツールはありません。認証は不要です。
+検索サイトと同じデータを、MCP（Model Context Protocol）のツールとして提供します。**読み取りのみ**（イベントの検索と、運用ダッシュボード用の集計）で、書き込み系のツールはありません。認証は不要です。
 
 - エンドポイント: `https://kids-event-hub.hashiba-baan-daiki.workers.dev/mcp`（Streamable HTTP。ステートレスで、POST に JSON で応答します）
 - ツール:
@@ -100,6 +100,7 @@ HTML・PDF の抽出には Claude API を使います。本番では `ANTHROPIC_
 | --- | --- | --- |
 | `search_events` | `prefecture`（必須。「香川県」「香川」「kagawa」）、`from` / `to`（JST の `YYYY-MM-DD`。省略時は今日から 30 日間、最大 92 日）、`age`（0〜18）、`keyword`（タイトル・概要・会場・市町村の部分一致、空白区切りで AND）、`limit`（1〜50、既定 20） | 期間中に開催中のイベント（開始日時順）。日時・会場・対象年齢・料金・詳細ページ URL・掲載元 URL。今日の日付 `today` も返す |
 | `get_event` | `id`（`search_events` の結果の id） | イベントの全項目 |
+| `get_dashboard` | `runs` / `failures`（1〜200、既定 50 / 20） | 運用の集計（`GET /api/dashboard` と同じ）。Claude の Dashboard がこのツールでデータを読む |
 
 **Claude Code** から:
 
