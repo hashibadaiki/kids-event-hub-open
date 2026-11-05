@@ -36,15 +36,6 @@ sources:
       status: caution
       checked_at: "2026-11-03"
       note: robots.txt なし（404）。サイトポリシー https://www.city.takamatsu.kagawa.jp/homepage/thissite.html は私的使用・引用の範囲外の無断転用を不可、リンクは原則自由。本文は転載せず要約と元 URL のみ
-  - name: 広報 高松
-    url: https://www.city.takamatsu.kagawa.jp/kurashi/shinotorikumi/koho/kouhou_4/index.html
-    prefecture: 香川県
-    type: pdf
-    note: 市の広報誌（月刊 PDF）。イベント欄から子供向けを拾う
-    policy:
-      status: caution
-      checked_at: "2026-11-03"
-      note: robots.txt なし（404）。サイトポリシー https://www.city.takamatsu.kagawa.jp/homepage/thissite.html は私的使用・引用の範囲外の無断転用を不可、リンクは原則自由。本文は転載せず要約と元 URL のみ
   - name: 宇多津町 子育て支援施設からのお知らせ
     url: https://www.town.utazu.lg.jp/site/navi/1105.html
     prefecture: 香川県
@@ -63,15 +54,6 @@ sources:
       status: caution
       checked_at: "2026-11-03"
       note: robots.txt なし（404）。サイトポリシー https://www.city.kanonji.kagawa.jp/site/userguide/4007.html は私的使用・引用の範囲外の無断複製・転用を禁止、リンクは URL のみ自由。本文は転載せず要約と元 URL のみ
-  - name: 丸亀市 イベント情報（RSS）
-    url: https://www.city.marugame.lg.jp/rss/10/list7.xml
-    prefecture: 香川県
-    type: rss
-    note: 全分野のイベント。子供向け以外も混ざる
-    policy:
-      status: ok
-      checked_at: "2026-11-03"
-      note: robots.txt なし（404）。サイトポリシー https://www.city.marugame.lg.jp/site/userguide/1451.html はコンテンツが CC BY 2.1 JP。リンクを張った団体は広報課への連絡を求めている（#36）
   - name: 坂出市立大橋記念図書館 申込受付中のイベント
     url: https://www.city.sakaide.lg.jp/site/toshokan-top/lib-mousikomi.html
     prefecture: 香川県

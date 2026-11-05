@@ -160,7 +160,7 @@ export async function collect(
     if (progress.pdfs.length === 0) throw new CrawlError(progress.skipped.join(" / "));
   } else {
     await options.onDocument?.(doc);
-    const extracted = await extractDocument(doc.text, doc.url, detected, declared, deps.claude, options.config);
+    const extracted = await extractDocument(doc.text, doc.url, detected, declared, deps.claude, options.config, deps.now());
     progress.type = extracted.type;
     raws = extracted.raws;
     if (declared === "html") raws.push(...(await followNextPages(doc, url, robotsRules, robotsUrl, throttle, deps, progress, options)));
@@ -211,7 +211,7 @@ async function followNextPages(
       const detected = detectType({ contentType: doc.contentType, url: doc.url, body: doc.text });
       if (detected !== "html") throw new CrawlError(`HTML ではありません（${detected}）`);
       await options.onDocument?.(doc);
-      const extracted = await extractDocument(doc.text, doc.url, detected, "html", deps.claude, options.config);
+      const extracted = await extractDocument(doc.text, doc.url, detected, "html", deps.claude, options.config, deps.now());
       raws.push(...extracted.raws);
       current = doc;
     } catch (e) {
@@ -371,7 +371,7 @@ function requireClaude(claude: ClaudeClient | null, what: string): ClaudeClient 
   return claude;
 }
 
-/** 取得した文書から抽出する。HTML の LLM 抽出には収集元の抽出設定（config）を使う */
+/** 取得した文書から抽出する。HTML の LLM 抽出には収集元の抽出設定（config）と取得日（referenceDate）を使う */
 export async function extractDocument(
   text: string,
   url: string,
@@ -379,6 +379,7 @@ export async function extractDocument(
   declared: string,
   claude: ClaudeClient | null,
   config: ExtractionConfig = {},
+  referenceDate: Date = new Date(),
 ): Promise<{ type: string; raws: RawEvent[] }> {
   switch (detected) {
     case "pdf":
@@ -390,16 +391,16 @@ export async function extractDocument(
     case "jsonld": {
       const raws = extractJsonLd(text, url);
       if (raws.length > 0) return { type: "jsonld", raws };
-      return { type: "llm", raws: await llm(text, url, claude, config) };
+      return { type: "llm", raws: await llm(text, url, claude, config, referenceDate) };
     }
     case "html":
       // JSON-LD / iCal / RSS のつもりで登録したのに普通の HTML だった → LLM フォールバック
-      return { type: declared === "html" ? "html" : "llm", raws: await llm(text, url, claude, config) };
+      return { type: declared === "html" ? "html" : "llm", raws: await llm(text, url, claude, config, referenceDate) };
   }
 }
 
-async function llm(html: string, url: string, claude: ClaudeClient | null, config: ExtractionConfig): Promise<RawEvent[]> {
-  return extractHtml(html, url, requireClaude(claude, "HTML"), config);
+async function llm(html: string, url: string, claude: ClaudeClient | null, config: ExtractionConfig, referenceDate: Date): Promise<RawEvent[]> {
+  return extractHtml(html, url, requireClaude(claude, "HTML"), config, referenceDate);
 }
 
 type Existing = { source_id: number; dedup_key: string; title: string; start_at: string; venue: string | null };
