@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { inferSourceType, parseSourcesFile } from "../src/sources/file";
+import sourcesYaml from "../../../sources.yaml?raw";
 
 const yaml = (s: string) => s.trim() + "\n";
 
@@ -125,5 +126,20 @@ describe("inferSourceType（type 省略時の推測）", () => {
     ["https://example.jp/events/", "html"],
   ])("%s → %s", (url, type) => {
     expect(inferSourceType(url)).toBe(type);
+  });
+});
+
+describe("リポジトリの sources.yaml", () => {
+  const { entries, errors } = parseSourcesFile(sourcesYaml);
+
+  it("すべての行が読めて、URL が重複しない", () => {
+    expect(errors).toEqual([]);
+    expect(entries.length).toBeGreaterThan(0);
+  });
+
+  it("オーナーが外した収集元（広報 高松・丸亀市 イベント情報 RSS）は載せない（#60）", () => {
+    expect(entries.map((e) => e.name)).not.toContain("広報 高松");
+    expect(entries.map((e) => e.url)).not.toContain("https://www.city.takamatsu.kagawa.jp/kurashi/shinotorikumi/koho/kouhou_4/index.html");
+    expect(entries.map((e) => e.url)).not.toContain("https://www.city.marugame.lg.jp/rss/10/list7.xml");
   });
 });
