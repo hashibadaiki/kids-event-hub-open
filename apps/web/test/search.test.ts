@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSearch, matchesQuery, searchPath, addDays, todayJst } from "../src/search";
+import { parseSearch, matchesQuery, searchPath, addDays, todayJst, MAX_KEYWORD_LENGTH } from "../src/search";
 import type { EventRecord } from "../src/repository";
 
 const now = new Date("2026-11-02T20:00:00Z"); // JST 2026-11-03 05:00
@@ -98,7 +98,36 @@ describe("parseSearch: URL → 検索条件", () => {
   });
 });
 
+describe("parseSearch: 施設・キーワード q", () => {
+  it("q を前後の空白を除いて keyword にする", () => {
+    const r = parseSearch({ prefecture: "kagawa", params: new URLSearchParams({ q: "  中央図書館 " }), now });
+    expect(r).toMatchObject({ ok: true, query: { keyword: "中央図書館" } });
+  });
+
+  it("空・空白だけの q は未指定", () => {
+    for (const q of ["", "  ", "\u3000"]) {
+      const r = parseSearch({ prefecture: "kagawa", params: new URLSearchParams({ q }), now });
+      expect(r.ok && "keyword" in r.query).toBe(false);
+    }
+  });
+
+  it(`q は ${MAX_KEYWORD_LENGTH} 文字まで`, () => {
+    const max = "あ".repeat(MAX_KEYWORD_LENGTH);
+    expect(parseSearch({ prefecture: "kagawa", params: new URLSearchParams({ q: max }), now })).toMatchObject({ ok: true });
+    expect(parseSearch({ prefecture: "kagawa", params: new URLSearchParams({ q: max + "あ" }), now })).toEqual({
+      ok: false,
+      status: 400,
+      reason: "invalid-keyword",
+    });
+  });
+});
+
 describe("searchPath: 検索条件 → 固定 URL", () => {
+  it("keyword は q として載せる", () => {
+    expect(searchPath({ slug: "kagawa", from: "2026-11-08", to: "2026-11-08", keyword: "図書館" })).toBe(
+      "/kagawa/2026-11-08?q=%E5%9B%B3%E6%9B%B8%E9%A4%A8",
+    );
+  });
   it("1 日なら /県/日付", () => {
     expect(searchPath({ slug: "kagawa", from: "2026-11-08", to: "2026-11-08" })).toBe("/kagawa/2026-11-08");
     expect(searchPath({ slug: "kagawa", from: "2026-11-08", to: "2026-11-08", age: 5 })).toBe(

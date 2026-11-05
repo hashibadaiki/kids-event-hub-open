@@ -25,7 +25,7 @@ const ev = (over: Partial<EventRecord>): EventRecord => ({
 
 const events = [
   ev({ id: 1 }),
-  ev({ id: 2, title: "親子工作教室", startAt: "2026-11-15T13:00", endAt: null, ageMin: 6, ageMax: 12, sourceUrl: "https://example.jp/flyer.pdf" }),
+  ev({ id: 2, title: "親子工作教室", venue: "中央児童館", startAt: "2026-11-15T13:00", endAt: null, ageMin: 6, ageMax: 12, sourceUrl: "https://example.jp/flyer.pdf" }),
   ev({ id: 3, title: "秋のスタンプラリー", startAt: "2026-11-01", endAt: "2026-11-30", allDay: true, ageMin: null, ageMax: null, ageText: null, withParent: null }),
   ev({ id: 4, title: "阿波の子ども祭り", prefecture: "徳島県", startAt: "2026-11-08" }),
   ev({ id: 5, title: "<script>alert(1)</script>", startAt: "2026-11-09T10:00", endAt: null }),
@@ -80,6 +80,32 @@ describe("一覧 /:pref, /:pref/:date", () => {
     expect(html).toMatch(/<option[^>]*value="8"[^>]*selected/);
   });
 
+  it("q で施設名・キーワードを絞り込む", async () => {
+    const all = await (await get("/kagawa?from=2026-11-01&to=2026-11-30")).text();
+    expect(all).toContain("親子工作教室");
+    const html = await (await get(`/kagawa?from=2026-11-01&to=2026-11-30&q=${encodeURIComponent("児童館")}`)).text();
+    expect(html).toContain("親子工作教室");
+    expect(html).not.toContain("おはなし会");
+    expect(html).not.toContain("秋のスタンプラリー");
+  });
+
+  it("フォームに施設・キーワード欄があり、現在の検索語が入っている", async () => {
+    const html = await (await get(`/kagawa?q=${encodeURIComponent("図書館")}`)).text();
+    expect(html).toMatch(/<input[^>]*type="search"[^>]*name="q"[^>]*value="図書館"/);
+    expect(html).toContain("施設・キーワード");
+  });
+
+  it("検索語は見出しに出し、日付ショートカットにも引き継ぐ", async () => {
+    const html = await (await get(`/kagawa?q=${encodeURIComponent("図書館")}`)).text();
+    expect(html).toMatch(/<h1>[^<]*「図書館」/);
+    expect(html).toContain('href="/kagawa/2026-11-03?q=%E5%9B%B3%E6%9B%B8%E9%A4%A8"');
+  });
+
+  it("検索語はエスケープされる", async () => {
+    const html = await (await get(`/kagawa?q=${encodeURIComponent('"><script>x</script>')}`)).text();
+    expect(html).not.toContain("<script>x</script>");
+  });
+
   it("該当なしのときはメッセージを出す", async () => {
     const html = await (await get("/kagawa/2027-01-01")).text();
     expect(html).toContain("見つかりませんでした");
@@ -107,6 +133,7 @@ describe("一覧 /:pref, /:pref/:date", () => {
     expect((await get("/kagawa/2026-02-30")).status).toBe(404);
     expect((await get("/kagawa?age=abc")).status).toBe(400);
     expect((await get("/kagawa?from=2026-11-10&to=2026-11-01")).status).toBe(400);
+    expect((await get(`/kagawa?q=${"a".repeat(101)}`)).status).toBe(400);
   });
 });
 
