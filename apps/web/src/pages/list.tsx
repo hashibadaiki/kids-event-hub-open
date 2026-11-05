@@ -1,11 +1,12 @@
 import { Layout } from "./layout";
 import type { EventRecord } from "../repository";
-import { addDays, MAX_AGE, searchPath, type SearchQuery } from "../search";
+import { addDays, MAX_AGE, MAX_KEYWORD_LENGTH, searchPath, type SearchQuery } from "../search";
 import { formatAge, formatDateShort, formatPrice, formatRange, formatWhen } from "../format";
 
 export function ListPage(props: { url: string; query: SearchQuery; today: string; events: EventRecord[] }) {
   const { query: q, events } = props;
-  const heading = `${q.prefecture} ${formatRange(q.from, q.to)}の子どもイベント`;
+  const keywordLabel = q.keyword ? `「${q.keyword}」の` : "";
+  const heading = `${q.prefecture} ${formatRange(q.from, q.to)}の${keywordLabel}子どもイベント`;
   const ageLabel = q.age !== undefined ? `（${q.age}歳向け）` : "";
   const description = `${heading}${ageLabel}。${events.length}件。`;
   // 日付のショートカット（今日から 7 日分）
@@ -16,7 +17,7 @@ export function ListPage(props: { url: string; query: SearchQuery; today: string
       <h1>{heading}</h1>
       <nav class="days" aria-label="日付">
         {days.map((d) => (
-          <a href={searchPath({ slug: q.slug, from: d, to: d, age: q.age })}>{formatDateShort(d)}</a>
+          <a href={searchPath({ slug: q.slug, from: d, to: d, age: q.age, keyword: q.keyword })}>{formatDateShort(d)}</a>
         ))}
       </nav>
       <form class="filter" method="get" action={`/${q.slug}`}>
@@ -38,6 +39,16 @@ export function ListPage(props: { url: string; query: SearchQuery; today: string
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          施設・キーワード
+          <input
+            type="search"
+            name="q"
+            value={q.keyword ?? ""}
+            maxlength={MAX_KEYWORD_LENGTH}
+            placeholder="例: 図書館"
+          />
         </label>
         <button type="submit">さがす</button>
       </form>

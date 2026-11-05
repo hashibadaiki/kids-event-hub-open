@@ -1,6 +1,6 @@
 import type { DashboardOptions, DashboardStats } from "@kids-event-hub/db";
 import type { EventRecord, EventRepository } from "../repository";
-import { parseSearch, todayJst, type SearchQuery } from "../search";
+import { MAX_KEYWORD_LENGTH, parseSearch, todayJst, type SearchQuery } from "../search";
 import { PREFECTURES, type Prefecture } from "../prefectures";
 import { formatAge, formatPrice, formatWhen, isPdfUrl } from "../format";
 
@@ -15,7 +15,6 @@ export const SERVER_INFO = { name: "kids-event-hub", title: "子供向けイベ�
 
 export const DEFAULT_TOOL_LIMIT = 20;
 export const MAX_TOOL_LIMIT = 50;
-export const MAX_KEYWORD_LENGTH = 100;
 export const MAX_DASHBOARD_LIMIT = 200;
 
 type JsonSchema = Record<string, unknown>;

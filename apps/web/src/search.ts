@@ -18,6 +18,7 @@ export type ParseResult =
 export const DEFAULT_RANGE_DAYS = 30;
 export const MAX_RANGE_DAYS = 92;
 export const MAX_AGE = 18;
+export const MAX_KEYWORD_LENGTH = 100;
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAY_MS = 86_400_000;
@@ -44,6 +45,7 @@ const daysBetween = (from: string, to: string) => Math.round((toUtc(to) - toUtc(
  * - `/:pref/:date` はその 1 日
  * - `/:pref?from=&to=` は範囲。未指定は今日から 30 日間
  * - `age` は対象年齢（0〜18 の整数）
+ * - `q` は施設名などのキーワード
  */
 export function parseSearch(input: {
   prefecture: string;
@@ -65,6 +67,11 @@ export function parseSearch(input: {
     age = Number(ageParam);
   }
 
+  const keyword = input.params.get("q")?.trim();
+  if (keyword && keyword.length > MAX_KEYWORD_LENGTH) {
+    return { ok: false, status: 400, reason: "invalid-keyword" };
+  }
+
   let from: string;
   let to: string;
   if (input.date !== undefined) {
@@ -84,11 +91,12 @@ export function parseSearch(input: {
 
   const query: SearchQuery = { prefecture: pref.name, slug: pref.slug, from, to };
   if (age !== undefined) query.age = age;
+  if (keyword) query.keyword = keyword;
   return { ok: true, query };
 }
 
 /** 検索条件 → 固定 URL（canonical） */
-export function searchPath(q: Pick<SearchQuery, "slug" | "from" | "to" | "age">): string {
+export function searchPath(q: Pick<SearchQuery, "slug" | "from" | "to" | "age" | "keyword">): string {
   const params = new URLSearchParams();
   let path = `/${q.slug}`;
   if (q.from === q.to) {
@@ -98,6 +106,7 @@ export function searchPath(q: Pick<SearchQuery, "slug" | "from" | "to" | "age">)
     params.set("to", q.to);
   }
   if (q.age !== undefined) params.set("age", String(q.age));
+  if (q.keyword) params.set("q", q.keyword);
   const s = params.toString();
   return s ? `${path}?${s}` : path;
 }
