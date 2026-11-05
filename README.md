@@ -58,7 +58,7 @@ pnpm sync-sources --remote    # 本番 D1 に反映（オーナーのみ）
 **削除依頼・お問い合わせ**: [GitHub の issue](https://github.com/hashibadaiki/kids-event-hub-open/issues) でご連絡ください。掲載の停止依頼は速やかに対応し、該当の収集元を無効化します。
 
 **抽出手段の優先順位**: JSON-LD（schema.org/Event）→ iCal → RSS → HTML（Claude で構造化）→ PDF（Claude で構造化）→ LLM フォールバック（JSON-LD などのつもりで登録したページに見つからなかったとき）。
-種別は Content-Type・URL・本文から判定します。抽出したイベントは `packages/core` で日付・年齢・料金・カテゴリを正規化し、重複判定してから `events` に保存します。実行結果（件数・日付が取れた数・保存数・エラー）は `crawl_runs` に記録します。
+種別は Content-Type・URL・本文から判定します。抽出したイベントは `packages/core` で日付・年齢・料金・カテゴリを正規化し、重複判定してから `events` に保存します。日付の直後に曜日が書かれていれば（「7日(土)」「11月3日（火・祝）」など）解釈した日付の曜日と照合し、合わなければ前後 1 か月で曜日が合う月が 1 つだけあればその月に直し、なければ日付なしにします（月の補完ミスで 1 か月ずれた日付をそのまま保存しないため。件数は品質レポートの `weekdayMismatches` と `crawl_runs.error_message` に残します）。実行結果（件数・日付が取れた数・保存数・エラー）は `crawl_runs` に記録します。
 
 ```sh
 pnpm check-policy https://example.jp/events/   # robots.txt・規約を確認して policy を提案（書き込まない）

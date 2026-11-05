@@ -261,6 +261,9 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     result.quality = progress.nothingNew
       ? null
       : scoreExtraction(progress.raws, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt });
+    if (result.quality && result.quality.weekdayMismatches > 0) {
+      progress.warnings.push(`書かれた曜日と合わない日付が ${result.quality.weekdayMismatches} 件あり、前後の月に直すか日付なしにしました`);
+    }
     const rows = progress.raws
       .map((r) => toEventRow(r, { prefecture: source.prefecture, sourceUrl: source.url, referenceDate: startedAt }))
       .filter((r): r is EventRow => r !== null);

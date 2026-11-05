@@ -28,7 +28,7 @@ MCP では `get_dashboard` の引数 `runs` / `failures`、API ではクエリ�
 | `sources.structuredRate` | 構造化データを持つ割合 | `type` が `jsonld` / `ical` / `rss` |
 | `runs[]` | クロールごとの取得件数・抽出成功率・日付取得率 | `crawl_runs`。`extractionRate = extracted / fetched`、`dateRate = dateFound / extracted` |
 | `configComparisons[]` | 自動改善の前後の日付取得率 | 親の版（`before`）と改善案の版（`after`）それぞれで動いた `crawl_runs` の合計 |
-| `failures[]` | 直近の失敗と原因 | `crawl_runs` の `failed` / `partial` と `error_message` |
+| `failures[]` | 直近の失敗と原因 | `crawl_runs` の `failed` / `partial` と `error_message`（書かれた曜日と合わない日付を直した・日付なしにした件数もここに出る） |
 
 自動改善の検証結果そのもの（保存データでの再抽出スコア）は #11 で追加される予定。`configComparisons` は本番クロールの実績で前後を比べる。
 

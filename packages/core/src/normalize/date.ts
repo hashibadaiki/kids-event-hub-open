@@ -2,6 +2,9 @@ import { toHalfWidth } from "./text";
 
 export type Recurrence = { freq: "weekly"; weekdays: number[] };
 
+/** 書かれた曜日と解釈した日付の曜日が合わなかったときの扱い。前後 1 か月で曜日が合う月に直した（corrected）か、日付なしにした（dropped） */
+export type WeekdayMismatch = "corrected" | "dropped";
+
 /**
  * 正規化した日付。日時は JST のローカル表記。
  * - 終日: "YYYY-MM-DD"
@@ -13,6 +16,7 @@ export type NormalizedDate = {
   end: string | null;
   allDay: boolean;
   recurrence: Recurrence | null;
+  weekdayMismatch?: WeekdayMismatch;
 };
 
 export type NormalizeDateOptions = {
@@ -34,6 +38,7 @@ const TIME_RE = /(午前|午後)?\s*(\d{1,2})(?::(\d{2})|時(?:\s*(\d{1,2})分|(
 const RANGE_SEP_RE = /^\s*(?:\([^)]*\))?\s*(?:~|-|から)\s*$/;
 const DAY_ONLY_END_RE = /^\s*(?:\([^)]*\))?\s*(?:~|-|から)\s*(\d{1,2})日/;
 const WEEKLY_RE = /毎週\s*((?:[日月火水木金土](?:曜日?)?\s*[・、,と]?\s*)+)/;
+const WRITTEN_WEEKDAY_RE = /^\s*\(?\s*([日月火水木金土])(?:曜日?)?(?=[)・\s]|$)/;
 
 export function normalizeDate(text: string, options: NormalizeDateOptions = {}): NormalizedDate | null {
   const s = toHalfWidth(text).replace(/元年/g, "1年");
@@ -45,6 +50,7 @@ export function normalizeDate(text: string, options: NormalizeDateOptions = {}):
   const matches = [...s.matchAll(DATE_RE)];
   let startYmd: Ymd | null = null;
   let endYmd: Ymd | null = null;
+  let weekdayMismatch: WeekdayMismatch | undefined;
   let rest = s;
 
   if (matches.length > 0) {
@@ -53,6 +59,14 @@ export function normalizeDate(text: string, options: NormalizeDateOptions = {}):
     const startExplicit = toExplicitYmd(first);
     startYmd = withYear(startExplicit, ref);
     if (!startYmd) return null;
+
+    const written = writtenWeekday(s.slice(firstEndIdx));
+    if (written !== null && weekdayOf(startYmd) !== written) {
+      const corrected = adjacentMonthWithWeekday(startYmd, written);
+      if (!corrected) return { start: null, end: null, allDay: true, recurrence, weekdayMismatch: "dropped" };
+      startYmd = corrected;
+      weekdayMismatch = "corrected";
+    }
 
     const second = matches[1];
     const between = second ? s.slice(firstEndIdx, second.index) : "";
@@ -88,7 +102,32 @@ export function normalizeDate(text: string, options: NormalizeDateOptions = {}):
     end: endDate && endTime ? `${endDate}T${endTime}` : endDate,
     allDay: startTime === null,
     recurrence,
+    ...(weekdayMismatch && { weekdayMismatch }),
   };
+}
+
+function writtenWeekday(after: string): number | null {
+  const m = WRITTEN_WEEKDAY_RE.exec(after);
+  return m ? WEEKDAYS.indexOf(m[1]!) : null;
+}
+
+/** 前後 1 か月の同じ日のうち、曜日が合うものが 1 つだけならそれを返す（0 または複数なら決められない） */
+function adjacentMonthWithWeekday(start: Ymd, weekday: number): Ymd | null {
+  const candidates = [-1, 1]
+    .map((delta) => asValid(shiftMonth(start, delta)))
+    .filter((c): c is Ymd => c !== null && weekdayOf(c) === weekday);
+  return candidates.length === 1 ? candidates[0]! : null;
+}
+
+function shiftMonth(p: Ymd, delta: number): Ymd {
+  const m = p.m + delta;
+  if (m < 1) return { y: p.y - 1, m: 12, d: p.d };
+  if (m > 12) return { y: p.y + 1, m: 1, d: p.d };
+  return { ...p, m };
+}
+
+function weekdayOf(p: Ymd): number {
+  return new Date(toUtc(p)).getUTCDay();
 }
 
 type PartialYmd = { y: number | null; m: number; d: number };
