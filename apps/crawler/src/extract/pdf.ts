@@ -1,5 +1,6 @@
 import type { ClaudeClient } from "../claude";
-import { absoluteUrl } from "./text";
+import { absoluteUrl, stripTags } from "./text";
+import { jstLocal } from "./time";
 import type { RawEvent } from "./types";
 
 export const MAX_PDF_LINKS = 100;
@@ -88,17 +89,55 @@ export async function extractPdf(bytes: Uint8Array, pdfUrl: string, claude: Clau
   return events;
 }
 
-export function findPdfLinks(html: string, pageUrl: string): string[] {
+export type PdfLink = { url: string; text: string };
+
+export function findPdfLinksWithText(html: string, pageUrl: string): PdfLink[] {
   const host = new URL(pageUrl).host;
-  const links: string[] = [];
-  for (const m of html.matchAll(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+  const anchorEnd = /<\/a\s*>|<a\b/gi;
+  const links: PdfLink[] = [];
+  for (const m of html.matchAll(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi)) {
     const abs = absoluteUrl((m[1] ?? m[2] ?? m[3] ?? "").trim(), pageUrl);
     if (!abs) continue;
     const u = new URL(abs);
     u.hash = "";
     if (u.host !== host || !u.pathname.toLowerCase().endsWith(".pdf")) continue;
-    if (!links.includes(u.href)) links.push(u.href);
+    if (!links.some((l) => l.url === u.href)) {
+      const start = m.index + m[0].length;
+      anchorEnd.lastIndex = start;
+      links.push({ url: u.href, text: stripTags(html.slice(start, anchorEnd.exec(html)?.index)) });
+    }
     if (links.length >= MAX_PDF_LINKS) break;
   }
   return links;
+}
+
+export function findPdfLinks(html: string, pageUrl: string): string[] {
+  return findPdfLinksWithText(html, pageUrl).map((l) => l.url);
+}
+
+const UNKNOWN_MONTH_PRIORITY = 6;
+const ERA_START: Record<string, number> = { 令和: 2018, 平成: 1988 };
+const YEAR_MONTH = /(?:(令和|平成)\s*(\d{1,2}|元)\s*年|(\d{4})\s*年)?\s*(?<!\d)(\d{1,2})\s*月/g;
+
+/** 一覧ページのリンク文言から号の月を読み、取る順番を決める（小さいほど先）。今月 0、来月 1、月が読めない 6、過去は 6 + 何か月前。年のない「M月」は今月・来月だけを先の月とみなす */
+export function pdfLinkPriority(text: string, referenceDate: Date): number {
+  const found = readYearMonth(text.normalize("NFKC"));
+  if (!found) return UNKNOWN_MONTH_PRIORITY;
+  const ref = jstLocal(referenceDate);
+  const refYear = Number(ref.slice(0, 4));
+  const refMonth = Number(ref.slice(5, 7));
+  const diff =
+    found.year === null ? ((found.month - refMonth + 22) % 12) - 10 : found.year * 12 + found.month - (refYear * 12 + refMonth);
+  return diff >= 0 ? diff : UNKNOWN_MONTH_PRIORITY - diff;
+}
+
+function readYearMonth(text: string): { year: number | null; month: number } | null {
+  for (const m of text.matchAll(YEAR_MONTH)) {
+    const month = Number(m[4]);
+    if (month < 1 || month > 12) continue;
+    if (m[1]) return { year: ERA_START[m[1]]! + (m[2] === "元" ? 1 : Number(m[2])), month };
+    if (m[3]) return { year: Number(m[3]), month };
+    return { year: null, month };
+  }
+  return null;
 }
