@@ -378,6 +378,25 @@ describe("crawlSource（PDF の一覧ページ）: 抽出済みの PDF は読み
     expect(seen).toContain("https://example.jp/files/m12.pdf");
   });
 
+  it("リンク文言の月を読み、今月・来月の号を先に取る（3 施設 × 4〜11 月号の並びで初回に 11 月号 3 本が入る）", async () => {
+    const id = await addSource(LIST, "pdf");
+    const months = [4, 5, 6, 7, 8, 9, 10, 11];
+    const issues = ["じどうかんだより", "すくすくだより", "すくすくだより"].flatMap((label, f) =>
+      months.map((m, i) => ({ url: `https://example.jp/uploaded/attachment/${4201 + f * months.length + i}.pdf`, text: `${label}${m}月号 [PDFファイル／4.${m}MB]`, m })),
+    );
+    const html = issues.map((x) => `<a href="${x.url}">${x.text}</a>`).join("");
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const d = deps(
+      { [LIST]: new Response(html, { headers: { "content-type": "text/html" } }), ...Object.fromEntries(issues.map((x) => [x.url, pdfResponse])) },
+      claude,
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    const byMonth = (m: number) => issues.filter((x) => x.m === m).map((x) => x.url);
+    expect(fetchedPdfs(d)).toEqual([...byMonth(11), ...byMonth(10).slice(0, 2)]);
+    expect(r).toMatchObject({ status: "success", extracted: 5 });
+    expect(r.error).toContain("19 件");
+  });
+
   it("取得・抽出に失敗した PDF は次回に取り直す", async () => {
     const id = await addSource(LIST, "pdf");
     const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
