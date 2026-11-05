@@ -106,6 +106,21 @@ describe("一覧 /:pref, /:pref/:date", () => {
     expect(html).not.toContain("<script>x</script>");
   });
 
+  it("日付の制約はスクリプトが付け、JavaScript なしでは送信を止めない", async () => {
+    const html = await (await get("/kagawa?from=2026-11-01&to=2026-11-30")).text();
+    expect(html).not.toMatch(/<input[^>]*name="to"[^>]*(min|max)=/);
+    expect(html).toMatch(/<form[^>]*class="filter"[^>]*data-max-days="92"[^>]*data-today="2026-11-03"/);
+  });
+
+  it("日付の入力を送信前に検証するスクリプトを出す", async () => {
+    const html = await (await get("/kagawa")).text();
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    expect(script).toContain("setCustomValidity");
+    expect(script).toContain("「いつまで」は「いつから」");
+    expect(script).toContain("期間は92日以内");
+    expect(script).toContain("日付を正しく入力");
+  });
+
   it("該当なしのときはメッセージを出す", async () => {
     const html = await (await get("/kagawa/2027-01-01")).text();
     expect(html).toContain("見つかりませんでした");
