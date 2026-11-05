@@ -1,6 +1,8 @@
 import { Layout } from "./layout";
 import type { EventRecord } from "../repository";
-import { addDays, MAX_AGE, MAX_KEYWORD_LENGTH, searchPath, type SearchQuery } from "../search";
+import { raw } from "hono/html";
+import { addDays, MAX_AGE, MAX_KEYWORD_LENGTH, MAX_RANGE_DAYS, searchPath, type SearchQuery } from "../search";
+import { DATE_VALIDATION_SCRIPT } from "./date-validation";
 import { formatAge, formatDateShort, formatPrice, formatRange, formatWhen } from "../format";
 
 export function ListPage(props: { url: string; query: SearchQuery; today: string; events: EventRecord[] }) {
@@ -20,14 +22,20 @@ export function ListPage(props: { url: string; query: SearchQuery; today: string
           <a href={searchPath({ slug: q.slug, from: d, to: d, age: q.age, keyword: q.keyword })}>{formatDateShort(d)}</a>
         ))}
       </nav>
-      <form class="filter" method="get" action={`/${q.slug}`}>
+      <form
+        class="filter"
+        method="get"
+        action={`/${q.slug}`}
+        data-max-days={String(MAX_RANGE_DAYS)}
+        data-today={props.today}
+      >
         <label>
           いつから
           <input type="date" name="from" value={q.from} />
         </label>
         <label>
           いつまで
-          <input type="date" name="to" value={q.to} />
+          <input type="date" name="to" value={q.to} min={q.from} max={addDays(q.from, MAX_RANGE_DAYS)} />
         </label>
         <label>
           子どもの年齢
@@ -52,6 +60,7 @@ export function ListPage(props: { url: string; query: SearchQuery; today: string
         </label>
         <button type="submit">さがす</button>
       </form>
+      <script>{raw(DATE_VALIDATION_SCRIPT)}</script>
       {events.length === 0 ? (
         <p>条件に合うイベントは見つかりませんでした。</p>
       ) : (
