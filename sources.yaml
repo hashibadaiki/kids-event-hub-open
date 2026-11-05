@@ -122,7 +122,7 @@ sources:
     url: https://www.city.okayama.jp/ft4/event_search.php?event4_site=6
     prefecture: 岡山県
     type: html
-    note: 市の子育て情報サイトに載るイベントだけの検索結果（全 100 件超・20 件ずつ）。図書館・児童館・子育て広場などの催しが日付付きで並ぶ。次ページは rel="next" がないため 1 ページ目のみ取得
+    note: 市の子育て情報サイトに載るイベントだけの検索結果（全 100 件超・20 件ずつ）。図書館・児童館・子育て広場などの催しが日付付きで並ぶ。次ページは「次へ」リンクでたどる（#56）。上限 5 ページ（100 件）まで
     policy:
       status: caution
       checked_at: "2026-11-05"
