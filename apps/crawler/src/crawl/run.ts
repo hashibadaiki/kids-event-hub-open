@@ -272,7 +272,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
     const saved = await save(db, source.id, runId, rows);
     result.upserted = saved.upserted;
     result.duplicates = saved.duplicates;
-    result.status = result.dateFound < result.extracted || progress.skipped.length > 0 ? "partial" : "success";
+    result.status = result.dateFound < result.extracted || progress.skipped.length > 0 || (result.quality?.weekdayMismatches ?? 0) > 0 ? "partial" : "success";
     const notes = [...progress.skipped, ...progress.warnings];
     result.error = notes.length > 0 ? notes.join(" / ") : null;
   } catch (e) {

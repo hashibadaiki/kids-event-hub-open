@@ -220,6 +220,16 @@ describe("crawlSource", () => {
     expect((await runs())[0]!.error_message).toContain("2 件");
   });
 
+  it("曜日で月を直しただけでも partial にして、ダッシュボードの失敗一覧から見えるようにする", async () => {
+    const id = await addSource("https://example.jp/events/", "html");
+    const claude: ClaudeClient = { callTool: vi.fn(async () => ({ events: [{ title: "はじめての森でおさんぽ！", date_text: "12月7日(土)" }] })) };
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }, claude));
+    expect(r).toMatchObject({ status: "partial", extracted: 1, dateFound: 1, upserted: 1 });
+    expect((await events())[0]).toMatchObject({ start_at: "2026-11-07" });
+    expect((await runs())[0]).toMatchObject({ status: "partial" });
+    expect((await runs())[0]!.error_message).toContain("1 件");
+  });
+
   it("HTML で複数の日に開催されるイベントは日付ごとに 1 行保存し、市町村と取得日を扱う", async () => {
     const id = await addSource("https://example.jp/events/", "html");
     const callTool = vi.fn(async () => ({

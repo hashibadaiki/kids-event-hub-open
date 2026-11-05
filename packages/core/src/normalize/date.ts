@@ -61,9 +61,10 @@ export function normalizeDate(text: string, options: NormalizeDateOptions = {}):
     if (!startYmd) return null;
 
     const written = writtenWeekday(s.slice(firstEndIdx));
+    const writtenMonth = startYmd.m;
     if (written !== null && weekdayOf(startYmd) !== written) {
       const corrected = adjacentMonthWithWeekday(startYmd, written);
-      if (!corrected) return { start: null, end: null, allDay: true, recurrence, weekdayMismatch: "dropped" };
+      if (!corrected) return dropped(recurrence);
       startYmd = corrected;
       weekdayMismatch = "corrected";
     }
@@ -72,7 +73,12 @@ export function normalizeDate(text: string, options: NormalizeDateOptions = {}):
     const between = second ? s.slice(firstEndIdx, second.index) : "";
     if (second && RANGE_SEP_RE.test(between)) {
       const endExplicit = toExplicitYmd(second);
-      endYmd = endExplicit.y !== null ? asValid(endExplicit as Ymd) : rollForward(endExplicit, startYmd);
+      if (weekdayMismatch) {
+        if (endExplicit.y !== null || endExplicit.m !== writtenMonth) return dropped(recurrence);
+        endYmd = rollForward({ y: null, m: startYmd.m, d: endExplicit.d }, startYmd);
+      } else {
+        endYmd = endExplicit.y !== null ? asValid(endExplicit as Ymd) : rollForward(endExplicit, startYmd);
+      }
       if (!endYmd) return null;
     } else {
       const dayOnly = DAY_ONLY_END_RE.exec(s.slice(firstEndIdx));
@@ -104,6 +110,11 @@ export function normalizeDate(text: string, options: NormalizeDateOptions = {}):
     recurrence,
     ...(weekdayMismatch && { weekdayMismatch }),
   };
+}
+
+/** 書かれた曜日と合わず、月を決められなかった日付。間違った日付を保存するより日付なしにする */
+function dropped(recurrence: Recurrence | null): NormalizedDate {
+  return { start: null, end: null, allDay: true, recurrence, weekdayMismatch: "dropped" };
 }
 
 function writtenWeekday(after: string): number | null {

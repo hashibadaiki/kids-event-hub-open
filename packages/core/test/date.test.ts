@@ -160,7 +160,7 @@ describe("normalizeDate: 書かれた曜日との照合", () => {
     expect(normalizeDate("11月7日(火) 10:00～12:00", { referenceDate: nov })).toMatchObject({ start: null, end: null, weekdayMismatch: "dropped" });
   });
 
-  it("範囲は開始の曜日だけ見る", () => {
+  it("範囲は開始の曜日で見る。合っていれば従来どおり", () => {
     expect(normalizeDate("11月9日(月)～20日(金)", { referenceDate: nov })).toEqual({
       start: "2026-11-09",
       end: "2026-11-20",
@@ -170,6 +170,23 @@ describe("normalizeDate: 書かれた曜日との照合", () => {
     expect(normalizeDate("11/9(月)～20(金)", { referenceDate: nov })).toMatchObject({ start: "2026-11-09" });
     expect(normalizeDate("11/9(月)～20(金)", { referenceDate: nov })).not.toHaveProperty("weekdayMismatch");
     expect(normalizeDate("12月28日(月)~1月3日(日)", { referenceDate: nov })).toMatchObject({ start: "2026-12-28", end: "2027-01-03" });
+  });
+
+  it("範囲の開始を直したら、同じ月で書かれた終わりも一緒に直す。終わりの月が別なら日付なしにする", () => {
+    expect(normalizeDate("12月7日(土)～12月9日(月)", { referenceDate: nov })).toEqual({
+      start: "2026-11-07",
+      end: "2026-11-09",
+      allDay: true,
+      recurrence: null,
+      weekdayMismatch: "corrected",
+    });
+    expect(normalizeDate("12月7日(土)～9日(月) 10:00～12:00", { referenceDate: nov })).toMatchObject({
+      start: "2026-11-07T10:00",
+      end: "2026-11-09T12:00",
+      weekdayMismatch: "corrected",
+    });
+    expect(normalizeDate("12月7日(土)～1月9日(土)", { referenceDate: nov })).toMatchObject({ start: null, end: null, weekdayMismatch: "dropped" });
+    expect(normalizeDate("12月7日(土)～2026年12月9日", { referenceDate: nov })).toMatchObject({ start: null, weekdayMismatch: "dropped" });
   });
 
   it("曜日ではない「月」「日」が続いても曜日とみなさない", () => {
