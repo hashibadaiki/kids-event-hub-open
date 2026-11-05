@@ -4,7 +4,7 @@ import type { ExtractionConfig } from "../extract/config";
 import { extractHtml } from "../extract/html";
 import { extractIcal } from "../extract/ical";
 import { extractJsonLd } from "../extract/jsonld";
-import { extractPdf, findPdfLinks } from "../extract/pdf";
+import { extractPdf, findPdfLinksWithText, pdfLinkPriority } from "../extract/pdf";
 import { extractRss } from "../extract/rss";
 import { summarizeEvents } from "../extract/summarize";
 import type { RawEvent } from "../extract/types";
@@ -116,13 +116,13 @@ export async function collect(
     raws = await extractPdf(doc.bytes, doc.url, requireClaude(deps.claude, "PDF"));
   } else if (declared === "pdf" && detected === "html") {
     progress.type = "pdf";
-    const links = findPdfLinks(doc.text, doc.url).filter((l) => new URL(l).host === url.host);
+    const links = findPdfLinksWithText(doc.text, doc.url).filter((l) => new URL(l.url).host === url.host);
     if (links.length === 0) throw new CrawlError(`一覧ページ（${doc.url}）に PDF へのリンクが見つかりません`);
-    const allowed: { link: string; check: ReturnType<typeof checkRobots> }[] = [];
-    for (const link of links) {
+    const allowed: { link: string; text: string; check: ReturnType<typeof checkRobots> }[] = [];
+    for (const { url: link, text } of links) {
       const lu = new URL(link);
       const check = checkRobots(robotsRules, lu.pathname + lu.search, USER_AGENT);
-      if (check.allowed) allowed.push({ link, check });
+      if (check.allowed) allowed.push({ link, text, check });
       else progress.skipped.push(`${link} は robots.txt（${robotsUrl}）の ${check.rule} で禁止のため取得しません`);
     }
     if (allowed.length === 0) throw new CrawlError(progress.skipped.join(" / "));
@@ -132,8 +132,10 @@ export async function collect(
       progress.raws = [];
       return progress;
     }
+    const now = deps.now();
     const retry = (a: { link: string }) => (options.retryPdfs?.has(a.link) ? 1 : 0);
-    const ordered = [...fresh].sort((a, b) => retry(a) - retry(b));
+    const priority = (a: { text: string }) => pdfLinkPriority(a.text, now);
+    const ordered = [...fresh].sort((a, b) => retry(a) - retry(b) || priority(a) - priority(b));
     const batch = ordered.slice(0, options.maxNewPdfs ?? MAX_NEW_PDFS_PER_RUN);
     if (ordered.length > batch.length) progress.warnings.push(`新しい PDF のうち ${ordered.length - batch.length} 件は次回のクロールで取得します`);
     const claude = requireClaude(deps.claude, "PDF");

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import flyerDataUrl from "./fixtures/flyer.pdf?inline";
 import calendarDataUrl from "./fixtures/calendar.pdf?inline";
-import { extractPdf, findPdfLinks, MAX_PDF_LINKS, toBase64 } from "../src/extract/pdf";
+import { extractPdf, findPdfLinks, findPdfLinksWithText, pdfLinkPriority, MAX_PDF_LINKS, toBase64 } from "../src/extract/pdf";
 import { toEventRow } from "../src/crawl/normalize";
 import type { ClaudeClient } from "../src/claude";
 
@@ -105,8 +105,7 @@ describe("extractPdf", () => {
   });
 });
 
-describe("findPdfLinks", () => {
-  const html = `
+const listingHtml = `
     <a href="/files/dayori-11.pdf">11月号（PDF）</a>
     <a href="files/dayori-12.PDF?v=2">12月号</a>
     <a href="https://example.jp/files/dayori-11.pdf#page=2">11月号 2ページ目</a>
@@ -114,8 +113,9 @@ describe("findPdfLinks", () => {
     <a href="/event/list.html">一覧</a>
     <a href='/docs/cal.pdf'>カレンダー</a>`;
 
+describe("findPdfLinks", () => {
   it("同じホストの PDF へのリンクを絶対 URL で重複なく返す", () => {
-    expect(findPdfLinks(html, "https://example.jp/kodomo/")).toEqual([
+    expect(findPdfLinks(listingHtml, "https://example.jp/kodomo/")).toEqual([
       "https://example.jp/files/dayori-11.pdf",
       "https://example.jp/kodomo/files/dayori-12.PDF?v=2",
       "https://example.jp/docs/cal.pdf",
@@ -125,5 +125,72 @@ describe("findPdfLinks", () => {
   it(`多すぎるときは先頭の ${MAX_PDF_LINKS} 件まで`, () => {
     const many = Array.from({ length: MAX_PDF_LINKS + 3 }, (_, i) => `<a href="/f/${i}.pdf">${i}</a>`).join("");
     expect(findPdfLinks(many, "https://example.jp/")).toHaveLength(MAX_PDF_LINKS);
+  });
+});
+
+describe("findPdfLinksWithText", () => {
+  it("URL とリンク文言を返す（同じ URL は最初の文言を残す）", () => {
+    expect(findPdfLinksWithText(listingHtml, "https://example.jp/kodomo/")).toEqual([
+      { url: "https://example.jp/files/dayori-11.pdf", text: "11月号（PDF）" },
+      { url: "https://example.jp/kodomo/files/dayori-12.PDF?v=2", text: "12月号" },
+      { url: "https://example.jp/docs/cal.pdf", text: "カレンダー" },
+    ]);
+  });
+
+  it("文言の中のタグと実体参照はテキストにし、閉じタグのないリンクは次のリンクの手前まで", () => {
+    const html = `
+      <a href="/uploaded/attachment/4262.pdf"><span class="file">すくすくだより11月号</span> [PDFファイル&#xFF0F;4.26MB]</a>
+      <a href="/uploaded/attachment/4261.pdf">すくすくだより10月号
+      <a href="/uploaded/attachment/4260.pdf"><img src="/i/pdf.png" alt="PDF"> 9月号</a>`;
+    expect(findPdfLinksWithText(html, "https://www.town.utazu.lg.jp/site/navi/1105.html")).toEqual([
+      { url: "https://www.town.utazu.lg.jp/uploaded/attachment/4262.pdf", text: "すくすくだより11月号 [PDFファイル／4.26MB]" },
+      { url: "https://www.town.utazu.lg.jp/uploaded/attachment/4261.pdf", text: "すくすくだより10月号" },
+      { url: "https://www.town.utazu.lg.jp/uploaded/attachment/4260.pdf", text: "9月号" },
+    ]);
+  });
+
+  it(`多すぎるときは先頭の ${MAX_PDF_LINKS} 件まで`, () => {
+    const many = Array.from({ length: MAX_PDF_LINKS + 3 }, (_, i) => `<a href="/f/${i}.pdf">${i}</a>`).join("");
+    expect(findPdfLinksWithText(many, "https://example.jp/")).toHaveLength(MAX_PDF_LINKS);
+  });
+});
+
+describe("pdfLinkPriority", () => {
+  const nov = new Date("2026-11-04T18:00:00Z");
+  const dec = new Date("2026-11-30T20:00:00Z");
+
+  it.each([
+    ["すくすくだより11月号 [PDFファイル／4.26MB]", 0],
+    ["じどうかんだより12月号 [PDFファイル／3.9MB]", 1],
+    ["令和8年11月 行事予定", 0],
+    ["2026年12月号", 1],
+    ["２０２６年１１月号", 0],
+    ["利用案内 [PDFファイル／4.13MB]", 6],
+    ["13月の予定", 6],
+    ["12・1月号（合併号）", 1],
+    ["12／1月号", 1],
+    ["第3月曜日 おはなし会", 6],
+    ["10月号", 7],
+    ["9月号", 8],
+    ["4月号", 13],
+    ["令和8年4月のおたより", 13],
+    ["平成31年4月", 97],
+  ])("基準 2026-11-05（JST）で「%s」→ %d", (text, want) => {
+    expect(pdfLinkPriority(text, nov)).toBe(want);
+  });
+
+  it.each([
+    ["12月号", 0],
+    ["1月号", 1],
+    ["2027年1月号", 1],
+    ["11月号", 7],
+  ])("基準 2026-12-01（JST）で「%s」→ %d", (text, want) => {
+    expect(pdfLinkPriority(text, dec)).toBe(want);
+  });
+
+  it("今月・来月 → 月なし → 過去の新しい順に並ぶ", () => {
+    const texts = ["4月号", "11月号", "12月号", "おしらせ（PDF）", "10月号"];
+    const sorted = [...texts].sort((a, b) => pdfLinkPriority(a, nov) - pdfLinkPriority(b, nov));
+    expect(sorted).toEqual(["11月号", "12月号", "おしらせ（PDF）", "10月号", "4月号"]);
   });
 });
