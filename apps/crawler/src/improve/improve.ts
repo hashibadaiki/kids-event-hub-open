@@ -107,7 +107,7 @@ async function evaluate(source: SourceInfo, docs: RawDocument[], config: Extract
   const raws: RawEvent[] = [];
   for (const doc of docs) {
     const detected = detectType({ contentType: doc.contentType, url: doc.url, body: doc.body });
-    const out = await extractDocument(doc.body, doc.url, detected, source.type, claude, config);
+    const out = await extractDocument(doc.body, doc.url, detected, source.type, claude, config, new Date(doc.fetchedAt));
     raws.push(...out.raws);
   }
   // 年の補完は最新の取得日時を基準にする（保存しているのは直近数回分なので差は小さい）

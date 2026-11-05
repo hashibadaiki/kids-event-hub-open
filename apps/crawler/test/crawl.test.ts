@@ -202,6 +202,31 @@ describe("crawlSource", () => {
     expect((await events())[0]).toMatchObject({ title: "親子リトミック", start_at: "2026-11-10T10:30", source_url: "https://example.jp/ev/1", summary: "親子で音楽あそび" });
   });
 
+  it("HTML で複数の日に開催されるイベントは日付ごとに 1 行保存し、市町村と取得日を扱う", async () => {
+    const id = await addSource("https://example.jp/events/", "html");
+    const callTool = vi.fn(async () => ({
+      events: [
+        {
+          title: "こどもプログラミング相談室",
+          date_text: "令和8年12月6日 第1日曜日 9時00分～11時00分",
+          extra_dates: ["令和8年12月20日 第3日曜日 9時00分～11時00分"],
+          venue: "大橋記念図書館 2階 展示室",
+          city: "坂出市",
+        },
+      ],
+    }));
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }, { callTool }));
+    expect(r).toMatchObject({ status: "success", extracted: 2, dateFound: 2, upserted: 2 });
+    expect((await events()).map((e) => [e.title, e.start_at, e.end_at])).toEqual([
+      ["こどもプログラミング相談室", "2026-12-06T09:00", "2026-12-06T11:00"],
+      ["こどもプログラミング相談室", "2026-12-20T09:00", "2026-12-20T11:00"],
+    ]);
+    const { results } = await env.DB.prepare("SELECT city FROM events").all<{ city: string }>();
+    expect(results.map((e) => e.city)).toEqual(["坂出市", "坂出市"]);
+    const prompt = (callTool.mock.calls[0] as unknown as [{ prompt: string }])[0].prompt;
+    expect(prompt).toContain("取得日: 2026年11月4日（水）");
+  });
+
   it("JSON-LD が見つからないページは LLM にフォールバックする", async () => {
     const id = await addSource("https://example.jp/events/", "jsonld");
     const claude: ClaudeClient = { callTool: vi.fn(async () => ({ events: [{ title: "工作教室", date_text: "11月15日" }] })) };
@@ -376,6 +401,25 @@ describe("crawlSource（PDF の一覧ページ）: 抽出済みの PDF は読み
     }
     expect(seen).toHaveLength(12);
     expect(seen).toContain("https://example.jp/files/m12.pdf");
+  });
+
+  it("リンク文言の月を読み、今月・来月の号を先に取る（3 施設 × 4〜11 月号の並びで初回に 11 月号 3 本が入る）", async () => {
+    const id = await addSource(LIST, "pdf");
+    const months = [4, 5, 6, 7, 8, 9, 10, 11];
+    const issues = ["じどうかんだより", "すくすくだより", "すくすくだより"].flatMap((label, f) =>
+      months.map((m, i) => ({ url: `https://example.jp/uploaded/attachment/${4201 + f * months.length + i}.pdf`, text: `${label}${m}月号 [PDFファイル／4.${m}MB]`, m })),
+    );
+    const html = issues.map((x) => `<a href="${x.url}">${x.text}</a>`).join("");
+    const claude = { callTool: vi.fn(async () => ({ events: [pdfEvents[0]] })) } satisfies ClaudeClient;
+    const d = deps(
+      { [LIST]: new Response(html, { headers: { "content-type": "text/html" } }), ...Object.fromEntries(issues.map((x) => [x.url, pdfResponse])) },
+      claude,
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    const byMonth = (m: number) => issues.filter((x) => x.m === m).map((x) => x.url);
+    expect(fetchedPdfs(d)).toEqual([...byMonth(11), ...byMonth(10).slice(0, 2)]);
+    expect(r).toMatchObject({ status: "success", extracted: 5 });
+    expect(r.error).toContain("19 件");
   });
 
   it("取得・抽出に失敗した PDF は次回に取り直す", async () => {
