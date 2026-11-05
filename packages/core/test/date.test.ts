@@ -187,6 +187,10 @@ describe("normalizeDate: 書かれた曜日との照合", () => {
     });
     expect(normalizeDate("12月7日(土)～1月9日(土)", { referenceDate: nov })).toMatchObject({ start: null, end: null, weekdayMismatch: "dropped" });
     expect(normalizeDate("12月7日(土)～2026年12月9日", { referenceDate: nov })).toMatchObject({ start: null, weekdayMismatch: "dropped" });
+    expect(normalizeDate("1月5日(木)～1月30日", { referenceDate: new Date("2025-12-20T00:00:00+09:00") })).toMatchObject({
+      start: null,
+      weekdayMismatch: "dropped",
+    });
   });
 
   it("曜日ではない「月」「日」が続いても曜日とみなさない", () => {

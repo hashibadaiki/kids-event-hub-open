@@ -76,6 +76,7 @@ export function normalizeDate(text: string, options: NormalizeDateOptions = {}):
       if (weekdayMismatch) {
         if (endExplicit.y !== null || endExplicit.m !== writtenMonth) return dropped(recurrence);
         endYmd = rollForward({ y: null, m: startYmd.m, d: endExplicit.d }, startYmd);
+        if (!endYmd) return dropped(recurrence);
       } else {
         endYmd = endExplicit.y !== null ? asValid(endExplicit as Ymd) : rollForward(endExplicit, startYmd);
       }
