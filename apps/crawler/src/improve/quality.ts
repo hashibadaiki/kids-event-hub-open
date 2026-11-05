@@ -1,4 +1,4 @@
-import { isDuplicate } from "@kids-event-hub/core";
+import { isDuplicate, normalizeDate } from "@kids-event-hub/core";
 import { toEventRow, type EventRow } from "../crawl/normalize";
 import type { RawEvent } from "../extract/types";
 
@@ -27,6 +27,8 @@ export type QualityReport = {
   duplicateRate: number;
   /** 必須項目（タイトル・日付・会場）のどれかが欠けている候補 / 候補 */
   missingRate: number;
+  /** 書かれた曜日と解釈した日付の曜日が合わず、前後の月に直した・日付なしにした候補の数（スコアには入れない。月ずれの検出用） */
+  weekdayMismatches: number;
   /** 0〜1。重み付きの合計 */
   score: number;
 };
@@ -39,7 +41,7 @@ const has = (v: string | null | undefined) => typeof v === "string" && v.trim() 
 /** 抽出結果を採点する（固定データでテストできる純粋関数） */
 export function scoreExtraction(raws: RawEvent[], ctx: Ctx): QualityReport {
   const n = raws.length;
-  if (n === 0) return { extracted: 0, dateRate: 0, venueRate: 0, ageRate: 0, duplicateRate: 0, missingRate: 0, score: 0 };
+  if (n === 0) return { extracted: 0, dateRate: 0, venueRate: 0, ageRate: 0, duplicateRate: 0, missingRate: 0, weekdayMismatches: 0, score: 0 };
 
   const rows = raws.map((r) => toEventRow(r, ctx));
   let dated = 0;
@@ -47,6 +49,7 @@ export function scoreExtraction(raws: RawEvent[], ctx: Ctx): QualityReport {
   let withAge = 0;
   let missing = 0;
   let duplicates = 0;
+  let weekdayMismatches = 0;
   const kept: EventRow[] = [];
   raws.forEach((raw, i) => {
     const row = rows[i];
@@ -54,6 +57,7 @@ export function scoreExtraction(raws: RawEvent[], ctx: Ctx): QualityReport {
     if (has(raw.venue)) withVenue++;
     if (has(raw.ageText) || (row && (row.ageMin != null || row.ageMax != null))) withAge++;
     if (!has(raw.title) || !row || !has(raw.venue)) missing++;
+    if (!raw.start && raw.dateText && normalizeDate(raw.dateText, { referenceDate: ctx.referenceDate })?.weekdayMismatch) weekdayMismatches++;
     if (row) {
       const c = { title: row.title, start: row.startAt, venue: row.venue };
       if (kept.some((k) => k.dedupKey === row.dedupKey || isDuplicate({ title: k.title, start: k.startAt, venue: k.venue }, c))) duplicates++;
@@ -81,6 +85,7 @@ export function scoreExtraction(raws: RawEvent[], ctx: Ctx): QualityReport {
     ageRate: round(r.ageRate),
     duplicateRate: round(r.duplicateRate),
     missingRate: round(r.missingRate),
+    weekdayMismatches,
     score: round(score),
   };
 }

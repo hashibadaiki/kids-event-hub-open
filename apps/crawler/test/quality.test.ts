@@ -25,13 +25,28 @@ describe("scoreExtraction", () => {
     expect(q.missingRate).toBe(0.5);
     // 0.35*0.75 + 0.15*0.5 + 0.15*0.25 + 0.15*(1-1/3) + 0.2*(1-0.5)
     expect(q.score).toBeCloseTo(0.575, 3);
+    expect(q.weekdayMismatches).toBe(0);
   });
 
   it("すべて揃っていれば 1、何も抽出できなければ 0", () => {
     const perfect = scoreExtraction([{ title: "工作教室", dateText: "11月15日", venue: "公民館", ageText: "5歳以上" }], ctx);
     expect(perfect.score).toBe(1);
     const empty = scoreExtraction([], ctx);
-    expect(empty).toMatchObject({ extracted: 0, score: 0, dateRate: 0, missingRate: 0 });
+    expect(empty).toMatchObject({ extracted: 0, score: 0, dateRate: 0, missingRate: 0, weekdayMismatches: 0 });
+  });
+
+  it("書かれた曜日と合わない日付の件数（前後の月に直した・日付なしにした）を数える", () => {
+    const q = scoreExtraction(
+      [
+        { title: "はじめての森でおさんぽ！", dateText: "12月7日(土)", venue: "公園" },
+        { title: "工作教室", dateText: "11月7日(火)", venue: "公民館" },
+        { title: "おはなし会", dateText: "11月20日（金）", venue: "図書館" },
+      ],
+      ctx,
+    );
+    expect(q.weekdayMismatches).toBe(2);
+    // 日付なしにした 1 件は日付取得率を下げる（直した 1 件は 11/7 として数える）
+    expect(q.dateRate).toBeCloseTo(2 / 3, 3);
   });
 
   it("年齢は表記がなくても正規化で取れていれば取得とみなす", () => {

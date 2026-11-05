@@ -202,6 +202,34 @@ describe("crawlSource", () => {
     expect((await events())[0]).toMatchObject({ title: "親子リトミック", start_at: "2026-11-10T10:30", source_url: "https://example.jp/ev/1", summary: "親子で音楽あそび" });
   });
 
+  it("書かれた曜日と合わない日付は前後の月に直すか日付なしにし、件数を記録に残す", async () => {
+    const id = await addSource("https://example.jp/events/", "html");
+    const claude: ClaudeClient = {
+      callTool: vi.fn(async () => ({
+        events: [
+          { title: "はじめての森でおさんぽ！", date_text: "12月7日(土)" },
+          { title: "工作教室", date_text: "11月7日(火)" },
+        ],
+      })),
+    };
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }, claude));
+    expect(r).toMatchObject({ status: "partial", extracted: 2, dateFound: 1, upserted: 1 });
+    expect(r.quality?.weekdayMismatches).toBe(2);
+    expect((await events())[0]).toMatchObject({ title: "はじめての森でおさんぽ！", start_at: "2026-11-07" });
+    expect((await runs())[0]!.error_message).toContain("曜日");
+    expect((await runs())[0]!.error_message).toContain("2 件");
+  });
+
+  it("曜日で月を直しただけでも partial にして、ダッシュボードの失敗一覧から見えるようにする", async () => {
+    const id = await addSource("https://example.jp/events/", "html");
+    const claude: ClaudeClient = { callTool: vi.fn(async () => ({ events: [{ title: "はじめての森でおさんぽ！", date_text: "12月7日(土)" }] })) };
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }, claude));
+    expect(r).toMatchObject({ status: "partial", extracted: 1, dateFound: 1, upserted: 1 });
+    expect((await events())[0]).toMatchObject({ start_at: "2026-11-07" });
+    expect((await runs())[0]).toMatchObject({ status: "partial" });
+    expect((await runs())[0]!.error_message).toContain("1 件");
+  });
+
   it("HTML で複数の日に開催されるイベントは日付ごとに 1 行保存し、市町村と取得日を扱う", async () => {
     const id = await addSource("https://example.jp/events/", "html");
     const callTool = vi.fn(async () => ({
