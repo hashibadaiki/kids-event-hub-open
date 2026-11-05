@@ -117,7 +117,7 @@ export function findPdfLinks(html: string, pageUrl: string): string[] {
 
 const UNKNOWN_MONTH_PRIORITY = 6;
 const ERA_START: Record<string, number> = { 令和: 2018, 平成: 1988 };
-const YEAR_MONTH = /(?:(令和|平成)\s*(\d{1,2}|元)\s*年|(\d{4})\s*年)?\s*(?<!\d)(\d{1,2})\s*月/g;
+const YEAR_MONTH = /(?:(令和|平成)\s*(\d{1,2}|元)\s*年|(\d{4})\s*年)?\s*(?<!\d)(\d{1,2})(?:\s*[・/、,]\s*\d{1,2})*\s*月(?!曜)/g;
 
 /** 一覧ページのリンク文言から号の月を読み、取る順番を決める（小さいほど先）。今月 0、来月 1、月が読めない 6、過去は 6 + 何か月前。年のない「M月」は今月・来月だけを先の月とみなす */
 export function pdfLinkPriority(text: string, referenceDate: Date): number {
