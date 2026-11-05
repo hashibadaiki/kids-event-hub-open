@@ -487,6 +487,37 @@ describe("findNextPageLink", () => {
     expect(findNextPageLink("<a rel='nofollow next' href='p2.html'>次へ</a>", "https://example.jp/list/")).toBe("https://example.jp/list/p2.html");
   });
 
+  it("rel=\"next\" がなければ「次へ」の文言のリンクを拾う（岡山市こそだてぽけっとの形）", () => {
+    const html =
+      '<nav class="page_head"><div class="pager"><ul><li><a href="/ft4/event_search.php?event4_site=6&amp;page=2">2</a></li></ul>' +
+      '<p><a href="/ft4/event_search.php?event4_site=6&amp;page=2">次へ</a></p><p><a href="/ft4/event_search.php?event4_site=6&amp;page=6">最後へ</a></p></div></nav>';
+    expect(findNextPageLink(html, "https://www.city.okayama.jp/ft4/event_search.php?event4_site=6")).toBe(
+      "https://www.city.okayama.jp/ft4/event_search.php?event4_site=6&page=2",
+    );
+  });
+
+  it.each([
+    ["次のページ", '<a href="p2.html">次のページ</a>'],
+    ["次のページへ ＞", '<a href="p2.html"><span>次のページへ</span> ＞</a>'],
+    ["次へ »", '<a class="next" href="p2.html">次へ&nbsp;&raquo;</a>'],
+    ["Next", '<a href="p2.html">Next</a>'],
+  ])("文言「%s」のリンクも次のページとみなす", (_label, html) => {
+    expect(findNextPageLink(html, "https://example.jp/list/")).toBe("https://example.jp/list/p2.html");
+  });
+
+  it("rel=\"next\" があれば文言より優先する", () => {
+    const html = '<a href="text.html">次へ</a><a rel="next" href="rel.html">もっと見る</a>';
+    expect(findNextPageLink(html, "https://example.jp/list/")).toBe("https://example.jp/list/rel.html");
+  });
+
+  it("「次へ」以外の文言や、ページ内リンク・javascript: は拾わない", () => {
+    const base = "https://example.jp/list/";
+    expect(findNextPageLink('<a href="p6.html">最後へ</a><a href="p0.html">前へ</a>', base)).toBeNull();
+    expect(findNextPageLink('<a href="/event/9">次のイベントはこちら</a>', base)).toBeNull();
+    expect(findNextPageLink('<a href="#top">次へ</a>', base)).toBeNull();
+    expect(findNextPageLink('<a href="javascript:void(0)">次へ</a>', base)).toBeNull();
+  });
+
   it("次のページがなければ null", () => {
     expect(findNextPageLink('<a href="?page=2">2</a><a rel="prev" href="?page=0">前へ</a>', "https://example.jp/")).toBeNull();
   });
@@ -524,6 +555,25 @@ describe("crawlSource（HTML）: 次のページをたどる", () => {
     expect((await runs())[0]).toMatchObject({ fetched_count: 3, error_message: null });
     const raw = await env.DB.prepare("SELECT url FROM raw_documents WHERE source_id = ? ORDER BY id").bind(id).all<{ url: string }>();
     expect(raw.results.map((x) => x.url)).toEqual([base, `${base}?page=1`, `${base}?page=2`]);
+  });
+
+  it("rel=\"next\" がない「次へ」リンクもたどる", async () => {
+    const id = await addSource(base, "html");
+    const textPage = (title: string, next?: string) =>
+      new Response(
+        `<html><body><ul><li>【${title}】11月21日（土）</li></ul>${next ? `<p><a href="${next}">次へ</a></p>` : ""}</body></html>`,
+        { headers: { "content-type": "text/html" } },
+      );
+    const d = deps(
+      {
+        [base]: textPage("パズル大会", "?page=2"),
+        [`${base}?page=2`]: textPage("わなげ遊び"),
+      },
+      pageClaude(),
+    );
+    const r = await crawlSource(env.DB, await source(id), d);
+    expect(r).toMatchObject({ status: "success", extracted: 2 });
+    expect(await titles()).toEqual(["パズル大会", "わなげ遊び"].sort());
   });
 
   it(`たどるのは ${MAX_HTML_PAGES} ページまで。残りがあることを記録する`, async () => {
