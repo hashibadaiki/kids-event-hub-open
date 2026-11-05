@@ -220,6 +220,31 @@ describe("crawlSource", () => {
     expect((await runs())[0]!.error_message).toContain("2 件");
   });
 
+  it("HTML で複数の日に開催されるイベントは日付ごとに 1 行保存し、市町村と取得日を扱う", async () => {
+    const id = await addSource("https://example.jp/events/", "html");
+    const callTool = vi.fn(async () => ({
+      events: [
+        {
+          title: "こどもプログラミング相談室",
+          date_text: "令和8年12月6日 第1日曜日 9時00分～11時00分",
+          extra_dates: ["令和8年12月20日 第3日曜日 9時00分～11時00分"],
+          venue: "大橋記念図書館 2階 展示室",
+          city: "坂出市",
+        },
+      ],
+    }));
+    const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/events/": new Response(page, { headers: { "content-type": "text/html" } }) }, { callTool }));
+    expect(r).toMatchObject({ status: "success", extracted: 2, dateFound: 2, upserted: 2 });
+    expect((await events()).map((e) => [e.title, e.start_at, e.end_at])).toEqual([
+      ["こどもプログラミング相談室", "2026-12-06T09:00", "2026-12-06T11:00"],
+      ["こどもプログラミング相談室", "2026-12-20T09:00", "2026-12-20T11:00"],
+    ]);
+    const { results } = await env.DB.prepare("SELECT city FROM events").all<{ city: string }>();
+    expect(results.map((e) => e.city)).toEqual(["坂出市", "坂出市"]);
+    const prompt = (callTool.mock.calls[0] as unknown as [{ prompt: string }])[0].prompt;
+    expect(prompt).toContain("取得日: 2026年11月4日（水）");
+  });
+
   it("JSON-LD が見つからないページは LLM にフォールバックする", async () => {
     const id = await addSource("https://example.jp/events/", "jsonld");
     const claude: ClaudeClient = { callTool: vi.fn(async () => ({ events: [{ title: "工作教室", date_text: "11月15日" }] })) };
