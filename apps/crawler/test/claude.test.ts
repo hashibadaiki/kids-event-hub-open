@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createClaudeClient, type ClaudeClient } from "../src/claude";
-import { extractHtml, htmlToText } from "../src/extract/html";
+import { extractHtml, fetchedDateText, htmlToText } from "../src/extract/html";
 import html from "./fixtures/page.html?raw";
 
 describe("createClaudeClient", () => {
@@ -118,6 +118,7 @@ describe("extractHtml", () => {
         title: "親子リトミック",
         dateText: "11月10日（火） 10:30～11:15",
         venue: "多目的室",
+        city: null,
         ageText: "1～3歳と保護者",
         priceText: "無料",
         summary: "音楽に合わせて親子で体を動かします",
@@ -128,5 +129,45 @@ describe("extractHtml", () => {
     expect(args.prompt).toContain("工作教室「どんぐりごま」");
     expect(args.prompt).not.toContain("<li>");
     expect(args.tool.name).toBe("record_events");
+  });
+
+  it("extra_dates の分だけ候補を増やし（1 日 1 件）、city を入れる", async () => {
+    const callTool = vi.fn(async () => ({
+      events: [
+        {
+          title: "こどもプログラミング相談室",
+          date_text: "令和8年12月6日 第1日曜日 9時00分～11時00分",
+          extra_dates: ["令和8年12月20日 第3日曜日 9時00分～11時00分", ""],
+          venue: "大橋記念図書館 2階 展示室",
+          city: "坂出市",
+        },
+      ],
+    }));
+    const events = await extractHtml(html, "https://example.jp/events/", { callTool });
+    expect(events.map((e) => e.dateText)).toEqual(["令和8年12月6日 第1日曜日 9時00分～11時00分", "令和8年12月20日 第3日曜日 9時00分～11時00分"]);
+    expect(events.map((e) => [e.title, e.venue, e.city])).toEqual(
+      Array.from({ length: 2 }, () => ["こどもプログラミング相談室", "大橋記念図書館 2階 展示室", "坂出市"]),
+    );
+  });
+
+  it("取得日（JST）をプロンプトに入れ、省略された月・年を見出し・取得日・曜日から補うよう指示する", async () => {
+    const callTool = vi.fn(async () => ({ events: [] }));
+    await extractHtml(html, "https://example.jp/events/", { callTool }, {}, new Date("2026-11-04T18:30:00Z"));
+    const first = (callTool.mock.calls[0] as unknown as [{ system: string; prompt: string }])[0];
+    expect(first.prompt).toContain("取得日: 2026年11月5日（木）");
+    expect(first.system).toContain("取得日");
+    expect(first.system).toContain("曜日");
+    expect(first.system).toContain("extra_dates");
+
+    await extractHtml(html, "https://example.jp/events/", { callTool });
+    const second = (callTool.mock.calls[1] as unknown as [{ prompt: string }])[0];
+    expect(second.prompt).toMatch(/取得日: \d{4}年\d{1,2}月\d{1,2}日（[日月火水木金土]）/);
+  });
+});
+
+describe("fetchedDateText", () => {
+  it("JST の年月日と曜日にする（UTC の日付境界をまたぐ）", () => {
+    expect(fetchedDateText(new Date("2026-11-04T15:00:00Z"))).toBe("2026年11月5日（木）");
+    expect(fetchedDateText(new Date("2026-11-04T14:59:59Z"))).toBe("2026年11月4日（水）");
   });
 });
