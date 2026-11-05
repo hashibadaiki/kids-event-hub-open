@@ -97,6 +97,23 @@ describe("extractPdf", () => {
     expect(new Set(rows.map((r) => r.dedupKey)).size).toBe(5);
   });
 
+  it("連続した期間（展示など）は 1 日ずつに展開せず、開始〜終了の 1 件になる", async () => {
+    const claude = claudeReturning([
+      { title: "後期展", dates: ["令和8年10月13日(火)～令和9年4月9日(金)"], time_text: "9:00～17:00", venue: "埋蔵文化財センター" },
+    ]);
+    const raws = await extractPdf(bytesOf(flyerDataUrl), "https://example.jp/tenji.pdf", claude);
+
+    const system = claude.callTool.mock.calls[0]![0].system;
+    expect(system).toContain("開始～終了を 1 要素");
+    expect(system).toContain("1 日ずつに展開しない");
+    expect(system).not.toContain("開催日を 1 日ずつ");
+
+    expect(raws).toHaveLength(1);
+    expect(raws[0]).toMatchObject({ title: "後期展", dateText: "令和8年10月13日(火)～令和9年4月9日(金) 9:00～17:00", venue: "埋蔵文化財センター" });
+    const row = toEventRow(raws[0]!, ctx)!;
+    expect([row.startAt, row.endAt, row.allDay]).toEqual(["2026-10-13T09:00", "2027-04-09T17:00", false]);
+  });
+
   it("タイトルのない項目は捨て、日付のない項目は日付なしの候補として残す（正規化で落ちる）", async () => {
     const claude = claudeReturning([{ title: " ", dates: ["2026年11月1日"] }, { title: "日程未定の講座" }, "壊れた値"]);
     const raws = await extractPdf(new Uint8Array([37, 80, 68, 70]), "https://example.jp/a.pdf", claude);
