@@ -118,3 +118,30 @@ sources:
       status: caution
       checked_at: "2026-11-03"
       note: robots.txt は管理系（/admin/・/search/・/json/・/core/ など）のみ Disallow で /tenpo/ は対象外。サイト利用規約が見つからない。本文は転載せず要約と元 URL のみ
+  - name: 岡山市 こそだてぽけっと イベント検索
+    url: https://www.city.okayama.jp/ft4/event_search.php?event4_site=6
+    prefecture: 岡山県
+    type: html
+    note: 市の子育て情報サイトに載るイベントだけの検索結果（全 100 件超・20 件ずつ）。図書館・児童館・子育て広場などの催しが日付付きで並ぶ。次ページは rel="next" がないため 1 ページ目のみ取得
+    policy:
+      status: caution
+      checked_at: "2026-11-05"
+      note: robots.txt なし（404）。著作権ページ https://www.city.okayama.jp/0000016716.html は私的使用・引用の範囲外の無断複製・転用を不可、リンクは原則自由（https://www.city.okayama.jp/0000016710.html）。本文は転載せず要約と元 URL のみ
+  - name: 岡山県立図書館 イベント案内
+    url: https://www.libnet.pref.okayama.jp/event/index.htm
+    prefecture: 岡山県
+    type: html
+    note: 当月の行事を日付ごとに並べた固定ページ。おはなし会・赤ちゃん向けなど子供向けが多い
+    policy:
+      status: caution
+      checked_at: "2026-11-05"
+      note: robots.txt なし（404）。サイトポリシー https://www.libnet.pref.okayama.jp/top/policy.htm は私的使用・引用の範囲外の無断転用を不可、リンクは原則フリー。本文は転載せず要約と元 URL のみ
+  - name: 人と科学の未来館サイピア イベントカレンダー
+    url: https://www.sci-pia.pref.okayama.jp/event/calendar.aspx
+    prefecture: 岡山県
+    type: html
+    note: 岡山県生涯学習センターの科学館。月ごとのカレンダーで科学ショー・工作・教室など
+    policy:
+      status: caution
+      checked_at: "2026-11-05"
+      note: robots.txt は特定のボット（Exabot・AhrefsBot など）のみ Disallow で一般の UA は対象外。利用規約・著作権のページが見つからない。本文は転載せず要約と元 URL のみ
