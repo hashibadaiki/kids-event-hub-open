@@ -52,6 +52,14 @@ test("cwd があっても先頭の cd <絶対パス> が指す worktree を優�
   assert.equal(recorded, repo.root);
 });
 
+test("git -C <path> commit は、その path のリポジトリのルートを使う", () => {
+  const repo = makeRepo("by-dash-c");
+  const recorded = runRecordingCwd(commit(`git -C ${repo.sub} commit -m x`, elsewhere), { CLAUDE_PROJECT_DIR: elsewhere });
+  assert.equal(recorded, repo.root);
+  const relative = runRecordingCwd(commit("git add -A && git -C sub commit -m x", repo.root), { CLAUDE_PROJECT_DIR: elsewhere });
+  assert.equal(relative, repo.root);
+});
+
 test("先頭の cd <相対パス> は cwd から解決する", () => {
   const repo = makeRepo("cd-relative");
   const recorded = runRecordingCwd(commit("cd sub && git commit -m x", repo.root), { CLAUDE_PROJECT_DIR: elsewhere });
