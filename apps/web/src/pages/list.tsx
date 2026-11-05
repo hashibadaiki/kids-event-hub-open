@@ -35,7 +35,7 @@ export function ListPage(props: { url: string; query: SearchQuery; today: string
         </label>
         <label>
           いつまで
-          <input type="date" name="to" value={q.to} min={q.from} max={addDays(q.from, MAX_RANGE_DAYS)} />
+          <input type="date" name="to" value={q.to} />
         </label>
         <label>
           子どもの年齢

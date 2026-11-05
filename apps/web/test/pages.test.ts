@@ -106,9 +106,9 @@ describe("一覧 /:pref, /:pref/:date", () => {
     expect(html).not.toContain("<script>x</script>");
   });
 
-  it("「いつまで」に「いつから」以降・最大期間の制約が付いている", async () => {
+  it("日付の制約はスクリプトが付け、JavaScript なしでは送信を止めない", async () => {
     const html = await (await get("/kagawa?from=2026-11-01&to=2026-11-30")).text();
-    expect(html).toMatch(/<input[^>]*type="date"[^>]*name="to"[^>]*min="2026-11-01"[^>]*max="2027-02-01"/);
+    expect(html).not.toMatch(/<input[^>]*name="to"[^>]*(min|max)=/);
     expect(html).toMatch(/<form[^>]*class="filter"[^>]*data-max-days="92"[^>]*data-today="2026-11-03"/);
   });
 
