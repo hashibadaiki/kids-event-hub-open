@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>
+<title>あおば市児童館 お知らせ</title>
+<item>
+  <title>こま回し大会</title>
+  <link>https://example.jp/jidokan/news/301</link>
+  <description>12月5日（土）に開催します。申込期間は11月1日から11月20日まで。</description>
+</item>
+<item>
+  <title>ときめき絵本タイム</title>
+  <link>https://example.jp/jidokan/news/302</link>
+  <content:encoded><![CDATA[<p>ときめきがいっぱいの絵本を読みます。</p><p>申込期間：11月1日～11月20日</p><p>12月19日（土）午後2時から開催します。</p>]]></content:encoded>
+</item>
+<item>
+  <title>野菜の収穫体験</title>
+  <link>https://example.jp/jidokan/news/303</link>
+  <content:encoded><![CDATA[<p>時間をかけて育てた野菜を収穫します。</p><p>期間限定のプログラムです。</p><p>受付：11月2日から</p><p>12月6日（日）午前10時から</p>]]></content:encoded>
+</item>
+<item>
+  <title>クリスマス工作</title>
+  <link>https://example.jp/jidokan/news/304</link>
+  <content:encoded><![CDATA[<p>申込：11月1日から</p><p>時間：午前10時～11時</p><p>12月5日（土）に工作室で開催します。</p>]]></content:encoded>
+</item>
+</channel></rss>

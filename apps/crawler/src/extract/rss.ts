@@ -40,14 +40,17 @@ function text(raw: string | null): string {
 }
 
 const BULLET = "[\\s【〔［\\[(（■□●○◆◇・*]*";
-const DATE_LABEL_RE = new RegExp(`^${BULLET}(日時|開催日時?|日程|日にち|期日|会期|期間|とき|時間)`);
+const LABEL_END = "(?:[】〕］\\])）:：]|\\s|$)";
+const DATE_LABEL_RE = new RegExp(`^${BULLET}(日時|開催日時?|日程|日にち|期日|会期|期間|とき|時間)${LABEL_END}`);
 const APPLY_LABEL_RE = new RegExp(`^${BULLET}(申込|申し込み|受付|応募|募集|締切|締め切り)`);
 const APPLY_PERIOD_RE = /(申込|申し込み|受付|応募|募集)(期間|期限|期日|開始|締切|締め切り)/;
 const LABEL_ONLY_RE = new RegExp(`^${BULLET}[^0-9０-９]{1,8}?[】〕］\\])）:：\\s]*$`);
+const MONTH_DAY_RE = /[0-9０-９]{1,2}\s*[月/／]\s*[0-9０-９]{1,2}/;
 
 /**
  * 正規化は最初の日付を開始日にするが、長い本文では申込期間が開催日より前に書かれていることがある。
- * そのため「日時」などの見出しの行があればそれだけを、なければ申込・受付の行を除いた本文を返す
+ * そのため月日を含む「日時」などの見出しの行があればそれだけを、なければ申込・受付の行を除いた本文を返す。
+ * 除くと月日が残らないとき（1 行の本文など）は本文をそのまま返す
  */
 function eventDateText(raw: string | null): string {
   if (raw === null) return "";
@@ -57,9 +60,10 @@ function eventDateText(raw: string | null): string {
       .map(stripTags)
       .filter(Boolean),
   );
-  const dated = lines.filter((l) => DATE_LABEL_RE.test(l));
-  if (dated.length > 0) return dated.join(" ");
-  return lines.filter((l) => !APPLY_LABEL_RE.test(l) && !APPLY_PERIOD_RE.test(l)).join(" ");
+  const labeled = lines.filter((l) => DATE_LABEL_RE.test(l)).join(" ");
+  if (MONTH_DAY_RE.test(labeled)) return labeled;
+  const withoutApply = lines.filter((l) => !APPLY_LABEL_RE.test(l) && !APPLY_PERIOD_RE.test(l)).join(" ");
+  return MONTH_DAY_RE.test(withoutApply) ? withoutApply : lines.join(" ");
 }
 
 function joinLabelLines(lines: string[]): string[] {

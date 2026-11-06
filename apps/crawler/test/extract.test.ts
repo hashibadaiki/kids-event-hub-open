@@ -4,6 +4,7 @@ import ics from "./fixtures/events.ics?raw";
 import rss from "./fixtures/rss.xml?raw";
 import atom from "./fixtures/atom.xml?raw";
 import rssContentEncoded from "./fixtures/rss-content-encoded.xml?raw";
+import rssDateEdgeCases from "./fixtures/rss-date-edge-cases.xml?raw";
 import { extractJsonLd } from "../src/extract/jsonld";
 import { extractIcal } from "../src/extract/ical";
 import { extractRss } from "../src/extract/rss";
@@ -110,6 +111,12 @@ describe("extractRss", () => {
     expect(normalizeDate(rocket!.dateText!, ref)).toMatchObject({ start: "2026-12-05T10:00", end: "2026-12-05T11:30" });
     expect(normalizeDate(story!.dateText!, ref)).toMatchObject({ start: "2026-11-28T14:00" });
     expect(normalizeDate(xmas!.dateText!, ref)).toMatchObject({ start: "2026-12-12T13:00" });
+  });
+
+  it("1 行の本文・見出しに似た行頭・月日のない見出しでも開催日を失わない", () => {
+    const ref = { referenceDate: new Date("2026-11-06T00:00:00+09:00") };
+    const starts = extractRss(rssDateEdgeCases).map((e) => normalizeDate(e.dateText!, ref)?.start ?? null);
+    expect(starts).toEqual(["2026-12-05", "2026-12-19T14:00", "2026-12-06T10:00", "2026-12-05T10:00"]);
   });
 
   it("Atom の entry も扱う", () => {
