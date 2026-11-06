@@ -6,6 +6,7 @@ import page from "./fixtures/page.html?raw";
 import flyerDataUrl from "./fixtures/flyer.pdf?inline";
 import { crawlSource, crawlAll, collect, MAX_HTML_PAGES, type CrawlDeps, type SourceRow } from "../src/crawl/run";
 import { findNextPageLink } from "../src/crawl/pager";
+import { runCrawlJob } from "../src/crawl/job";
 import { toEventRow, dedupKeyOf } from "../src/crawl/normalize";
 import type { ClaudeClient } from "../src/claude";
 
@@ -829,6 +830,22 @@ describe("crawlAll: アドホック実行の絞り込みと force", () => {
   const B = "https://example.jp/b.ics";
   const routes = { [A]: icsResponse, [B]: icsResponse };
 
+  it("onResult で、収集元を 1 件取り終えるたびに結果を受け取れる", async () => {
+    const a = await addSource(A, "ical");
+    const b = await addSource(B, "ical");
+    const seen: [number, string, number][] = [];
+    const out = await crawlAll(env.DB, deps(routes), {
+      onResult: async (r) => {
+        seen.push([r.sourceId, r.status, (await runs()).length]);
+      },
+    });
+    expect(seen).toEqual([
+      [a, "success", 1],
+      [b, "success", 2],
+    ]);
+    expect(out.map((r) => r.sourceId)).toEqual([a, b]);
+  });
+
   it("sourceIds を指定すると、その収集元だけクロールする", async () => {
     await addSource(A, "ical");
     const b = await addSource(B, "ical");
@@ -921,5 +938,36 @@ describe("crawlAll: 直前に失敗した収集元は 2 回目の Cron で取り
 
     expect(await crawlAt(hoursLater(24))).toEqual([]);
     expect((await crawlAt(hoursLater(33))).map((r) => [r.sourceId, r.status])).toEqual([[target, "success"]]);
+  });
+});
+
+describe("crawlAll: 途中で打ち切られて running のまま残った取得", () => {
+  const now = "2026-11-03T18:00:00.000Z";
+  const addRun = async (sourceId: number, startedAt: string) =>
+    (await env.DB.prepare("INSERT INTO crawl_runs (source_id, status, started_at) VALUES (?, 'running', ?) RETURNING id").bind(sourceId, startedAt).first<{ id: number }>())!.id;
+
+  it("開始から 1 時間以上たった running は failed にし、打ち切られたことを残す。1 時間以内のものは実行中かもしれないので触らない", async () => {
+    const s = await addSource("https://example.jp/off.ics", "ical", { enabled: 0 });
+    const stale = await addRun(s, "2026-11-03T16:30:00Z");
+    const recent = await addRun(s, "2026-11-03T17:30:00Z");
+
+    await crawlAll(env.DB, deps({}));
+
+    const byId = new Map((await runs()).map((r) => [r.id, r]));
+    expect(byId.get(stale)).toMatchObject({ status: "failed", finished_at: now });
+    expect(String(byId.get(stale)!.error_message)).toContain("打ち切られ");
+    expect(byId.get(recent)).toMatchObject({ status: "running", finished_at: null });
+  });
+});
+
+describe("runCrawlJob", () => {
+  it("Cron と pnpm crawl-prod 共通の流れ: 収集元ごとに onResult を呼び、結果を返す", async () => {
+    const id = await addSource("https://example.jp/cal.ics", "ical");
+    const seen: number[] = [];
+    const routes = { "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }) };
+    const { results, improved } = await runCrawlJob(env.DB, deps(routes), { force: true }, { onResult: (r) => void seen.push(r.sourceId) });
+    expect(seen).toEqual([id]);
+    expect(results.map((r) => r.status)).toEqual(["success"]);
+    expect(improved).toEqual([]);
   });
 });

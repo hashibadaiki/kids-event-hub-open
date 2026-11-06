@@ -69,12 +69,15 @@ cd apps/crawler && pnpm dev                     # apps/web と同じローカル
 curl "http://localhost:8787/__scheduled?cron=0+18+*+*+*"   # Cron を手動で起動
 ```
 
-本番のクロールを Cron を待たずに動かすときは、オーナーが手元で `pnpm crawl-prod` を実行します。手元の `wrangler dev` を本番 D1 に（remote binding で）つなぎ、クロールと自動改善を 1 回だけ実行して終わります。Cron と違い、間隔の制限（成功から 20 時間 / 直前から 6 時間）はかけずに今すぐ取ります（ng・無効・未承認の収集元は取りません）。デプロイは要りません。`wrangler login` 済みで、`apps/crawler/.dev.vars` に `ANTHROPIC_API_KEY` があることが前提です。
+本番のクロールを Cron を待たずに動かすときは、オーナーが手元で `pnpm crawl-prod` を実行します。手元の Node から本番 D1 に（`getPlatformProxy` の remote binding で）つなぎ、Cron と同じクロールと自動改善を 1 回だけ実行して終わります。収集元を 1 件取り終えるたびに結果を表示します。`wrangler dev` を使わないので、実行中にファイルが変わっても止まりません。Cron と違い、間隔の制限（成功から 20 時間 / 直前から 6 時間）はかけずに今すぐ取ります（ng・無効・未承認の収集元は取りません）。デプロイは要りません。`wrangler login` 済みで、`apps/crawler/.dev.vars` に `ANTHROPIC_API_KEY` があることが前提です。
+
+途中で止めた（Ctrl+C など）取得は `running` のまま残りますが、開始から 1 時間たった `running` は次のクロール（Cron・手動のどちらでも）が「実行が途中で打ち切られました」として failed にします。
 
 ```sh
 cd apps/crawler
 pnpm crawl-prod                            # クロール対象の全収集元
 pnpm crawl-prod --source 3 --source 12     # 指定した収集元だけ
+pnpm crawl-prod --local --source 3         # 本番ではなくローカル D1 で動作確認
 ```
 
 **HTML（Claude で構造化）**: 本文テキストと取得日（JST）を Claude に渡し、イベントの配列（タイトル・開催日時・会場・市町村・対象年齢・料金・要約・個別ページのリンク）を受け取ります。同じイベントが複数の日に開催されるときは日付ごとに分けて保存します。日と曜日だけのカレンダーのように月や年が省略されていれば、ページの見出しと取得日・曜日から補います（前後の月へのリンクの月と取り違えないよう指示しています）。収集元ごとの抽出設定（指示・ヒント・CSS セレクタ）は自動改善ループが育てます。
