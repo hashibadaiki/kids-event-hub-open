@@ -406,43 +406,45 @@ async function llm(html: string, url: string, claude: ClaudeClient | null, confi
   return extractHtml(html, url, requireClaude(claude, "HTML"), config, referenceDate);
 }
 
-type Existing = { source_id: number; dedup_key: string; title: string; start_at: string; venue: string | null };
+type Existing = { id: number; source_id: number; dedup_key: string; title: string; start_at: string; venue: string | null };
+
+const candidateOf = (r: EventRow) => ({ title: r.title, start: r.startAt, venue: r.venue });
 
 /**
- * 同じ収集元の中で重複を除き、同じ都道府県・同じ日の既存イベントと重複していなければ upsert する。
- * 同じ収集元で重複キーが同じなら同じイベントとして更新する
+ * 同じ収集元の中で重複を除き、同じ都道府県・同じ日の既存イベントと突き合わせて保存する。
+ * 同じ収集元に重複キーが同じ行、なければ isDuplicate で同じイベントとみなせる行があれば、その行を更新する（重複キーも新しいものに置き換える）。
+ * それがなく別の収集元に同じイベントがあれば、先に入った方を残す。1 つの既存行を更新するのは 1 件だけ
  */
 async function save(db: D1Database, sourceId: number, runId: number, rows: EventRow[]) {
-  const kept: EventRow[] = [];
+  const kept: { row: EventRow; existingId: number | null }[] = [];
+  const claimed = new Set<number>();
   let duplicates = 0;
   for (const row of rows) {
-    const candidate = { title: row.title, start: row.startAt, venue: row.venue };
-    if (kept.some((k) => k.dedupKey === row.dedupKey || isDuplicate({ title: k.title, start: k.startAt, venue: k.venue }, candidate))) {
+    const candidate = candidateOf(row);
+    if (kept.some((k) => isDuplicate(candidateOf(k.row), candidate))) {
       duplicates++;
       continue;
     }
-    const day = row.startAt.slice(0, 10);
     const { results } = await db
-      .prepare("SELECT source_id, dedup_key, title, start_at, venue FROM events WHERE prefecture = ? AND substr(start_at, 1, 10) = ?")
-      .bind(row.prefecture, day)
+      .prepare("SELECT id, source_id, dedup_key, title, start_at, venue FROM events WHERE prefecture = ? AND substr(start_at, 1, 10) = ?")
+      .bind(row.prefecture, row.startAt.slice(0, 10))
       .all<Existing>();
-    // 同じ収集元の同じ重複キーは更新。別の収集元のものは先に入った方を残す
-    const dup = results.some((e) =>
-      e.dedup_key === row.dedupKey
-        ? e.source_id !== sourceId
-        : isDuplicate({ title: e.title, start: e.start_at, venue: e.venue }, candidate),
-    );
-    if (dup) {
+    const open = results.filter((e) => !claimed.has(e.id));
+    const same = (e: Existing) => isDuplicate({ title: e.title, start: e.start_at, venue: e.venue }, candidate);
+    const own = open.filter((e) => e.source_id === sourceId);
+    const match = own.find((e) => e.dedup_key === row.dedupKey) ?? own.find(same);
+    if (!match && open.some(same)) {
       duplicates++;
       continue;
     }
-    kept.push(row);
+    if (match) claimed.add(match.id);
+    kept.push({ row, existingId: match?.id ?? null });
   }
-  if (kept.length > 0) await db.batch(kept.map((r) => upsert(db, sourceId, runId, r)));
+  if (kept.length > 0) await db.batch(kept.map((k) => write(db, sourceId, runId, k.row, k.existingId)));
   return { upserted: kept.length, duplicates };
 }
 
-function upsert(db: D1Database, sourceId: number, runId: number, r: EventRow): D1PreparedStatement {
+function write(db: D1Database, sourceId: number, runId: number, r: EventRow, existingId: number | null): D1PreparedStatement {
   const cols: Record<string, unknown> = {
     source_id: sourceId,
     crawl_run_id: runId,
@@ -469,6 +471,11 @@ function upsert(db: D1Database, sourceId: number, runId: number, r: EventRow): D
     dedup_key: r.dedupKey,
   };
   const keys = Object.keys(cols);
+  if (existingId !== null) {
+    return db
+      .prepare(`UPDATE events SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .bind(...Object.values(cols), existingId);
+  }
   const updates = keys.filter((k) => k !== "dedup_key").map((k) => `${k} = excluded.${k}`);
   return db
     .prepare(

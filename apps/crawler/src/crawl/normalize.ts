@@ -10,9 +10,9 @@ import type { RawEvent } from "../extract/types";
 
 export type EventRow = Omit<typeof events.$inferInsert, "id" | "sourceId" | "crawlRunId" | "createdAt" | "updatedAt">;
 
-/** 重複キー: 都道府県 + 開催日 + 比較用に正規化したタイトル */
-export function dedupKeyOf(prefecture: string, startAt: string, title: string): string {
-  return `${prefecture}|${startAt.slice(0, 10)}|${normalizeForCompare(title)}`;
+/** 重複キー: 都道府県 + 開催日 + 比較用に正規化したタイトル + 比較用に正規化した会場 */
+export function dedupKeyOf(prefecture: string, startAt: string, title: string, venue: string | null): string {
+  return `${prefecture}|${startAt.slice(0, 10)}|${normalizeForCompare(title)}|${normalizeForCompare(venue ?? "")}`;
 }
 
 /**
@@ -62,6 +62,6 @@ export function toEventRow(
     applyText: raw.applyText ?? null,
     categories: classifyCategory(title, raw.description ?? ""),
     sourceUrl: raw.url ?? ctx.sourceUrl,
-    dedupKey: dedupKeyOf(ctx.prefecture, startAt, title),
+    dedupKey: dedupKeyOf(ctx.prefecture, startAt, title, raw.venue ?? null),
   };
 }
