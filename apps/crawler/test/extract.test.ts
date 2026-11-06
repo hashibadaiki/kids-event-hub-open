@@ -3,9 +3,11 @@ import jsonldHtml from "./fixtures/jsonld.html?raw";
 import ics from "./fixtures/events.ics?raw";
 import rss from "./fixtures/rss.xml?raw";
 import atom from "./fixtures/atom.xml?raw";
+import rssContentEncoded from "./fixtures/rss-content-encoded.xml?raw";
 import { extractJsonLd } from "../src/extract/jsonld";
 import { extractIcal } from "../src/extract/ical";
 import { extractRss } from "../src/extract/rss";
+import { normalizeDate } from "@kids-event-hub/core";
 
 describe("extractJsonLd", () => {
   it("schema.org の Event（サブタイプ・@graph・配列を含む）を取り出す", () => {
@@ -98,6 +100,16 @@ describe("extractRss", () => {
         url: "https://example.jp/news/11",
       },
     ]);
+  });
+
+  it("content:encoded があれば description の抜粋より優先し、申込期間ではなく開催日を読む", () => {
+    const [rocket, story, xmas] = extractRss(rssContentEncoded);
+    expect(rocket!.description).toContain("会場：みどり町図書館");
+    expect(rocket!.description).not.toContain("Read more");
+    const ref = { referenceDate: new Date("2026-11-06T00:00:00+09:00") };
+    expect(normalizeDate(rocket!.dateText!, ref)).toMatchObject({ start: "2026-12-05T10:00", end: "2026-12-05T11:30" });
+    expect(normalizeDate(story!.dateText!, ref)).toMatchObject({ start: "2026-11-28T14:00" });
+    expect(normalizeDate(xmas!.dateText!, ref)).toMatchObject({ start: "2026-12-12T13:00" });
   });
 
   it("Atom の entry も扱う", () => {
