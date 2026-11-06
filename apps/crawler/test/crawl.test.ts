@@ -742,6 +742,44 @@ describe("crawlAll", () => {
   });
 });
 
+describe("crawlAll: アドホック実行の絞り込みと force", () => {
+  const icsResponse = () => new Response(ics, { headers: { "content-type": "text/calendar" } });
+  const A = "https://example.jp/a.ics";
+  const B = "https://example.jp/b.ics";
+  const routes = { [A]: icsResponse, [B]: icsResponse };
+
+  it("sourceIds を指定すると、その収集元だけクロールする", async () => {
+    await addSource(A, "ical");
+    const b = await addSource(B, "ical");
+    const r = await crawlAll(env.DB, deps(routes), { sourceIds: [b] });
+    expect(r.map((x) => x.sourceId)).toEqual([b]);
+  });
+
+  it("force なしなら、指定した収集元でも 20 時間以内の取得はスキップする", async () => {
+    const a = await addSource(A, "ical");
+    await crawlAll(env.DB, deps(routes), { sourceIds: [a] });
+    expect(await crawlAll(env.DB, deps(routes), { sourceIds: [a] })).toEqual([]);
+  });
+
+  it("force なら間隔の制限を外して取り直す", async () => {
+    const a = await addSource(A, "ical");
+    await crawlAll(env.DB, deps(routes), { sourceIds: [a] });
+    const again = await crawlAll(env.DB, deps(routes), { sourceIds: [a], force: true });
+    expect(again.map((x) => [x.sourceId, x.status])).toEqual([[a, "success"]]);
+  });
+
+  it("force でも ng・無効・未承認の収集元はクロールしない", async () => {
+    const ng = await addSource("https://example.jp/ng.ics", "ical", { policy_status: "ng" });
+    const off = await addSource("https://example.jp/off.ics", "ical", { enabled: 0 });
+    const pending = await addSource("https://example.jp/pending.ics", "ical", { status: "pending" });
+    expect(await crawlAll(env.DB, deps(routes), { sourceIds: [ng, off, pending], force: true })).toEqual([]);
+  });
+
+  it("force は sourceIds なしでは使えない", async () => {
+    await expect(crawlAll(env.DB, deps(routes), { force: true })).rejects.toThrow("sourceIds");
+  });
+});
+
 describe("crawlAll: 直前に失敗した収集元は 2 回目の Cron で取り直す", () => {
   const ICS = "https://example.jp/cal.ics";
   const ROBOTS = "https://example.jp/robots.txt";
