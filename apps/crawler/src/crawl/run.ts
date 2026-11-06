@@ -482,12 +482,11 @@ function upsert(db: D1Database, sourceId: number, runId: number, r: EventRow): D
  * クロール対象（approved・有効・policy が ng でない。packages/db の crawlTargets と同じ条件）のうち、
  * 最後に成功（success / partial）した取得から MIN_INTERVAL_HOURS 以上、かつ直前の取得から RETRY_INTERVAL_HOURS 以上たった収集元を順にクロールする。
  * 成功した収集元は 1 日 1 回、失敗した収集元は 2 回目の Cron で取り直す。
- * アドホック実行（bin/crawl-prod.ts）では sourceIds で対象を絞り、force で間隔の制限を外せる（force は sourceIds 指定時のみ）
+ * アドホック実行（bin/crawl-prod.ts）では sourceIds で対象を絞り、force で間隔の制限を外せる
  */
 export type CrawlAllOptions = { sourceIds?: number[]; force?: boolean };
 
 export async function crawlAll(db: D1Database, deps: CrawlDeps, options: CrawlAllOptions = {}): Promise<CrawlResult[]> {
-  if (options.force && !options.sourceIds?.length) throw new Error("force は sourceIds を指定したときだけ使えます");
   const only = options.sourceIds ? new Set(options.sourceIds) : null;
   const { results } = await db
     .prepare(

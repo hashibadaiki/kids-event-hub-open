@@ -18,18 +18,18 @@ describe("adhocOptionsFromEnv", () => {
 });
 
 describe("parseCrawlProdArgs", () => {
-  it("引数なしなら変数を渡さない", () => {
-    expect(parseCrawlProdArgs([])).toEqual({ vars: [] });
+  it("引数なしなら全収集元を間隔の制限なしで取る", () => {
+    expect(parseCrawlProdArgs([])).toEqual({ vars: ["CRAWL_FORCE:1"] });
   });
 
-  it("--source は複数指定でき、--force と一緒に wrangler dev の --var にする", () => {
-    expect(parseCrawlProdArgs(["--source", "3", "--source", "12", "--force"])).toEqual({
+  it("--source は複数指定でき、wrangler dev の --var にする（間隔の制限はかけない）", () => {
+    expect(parseCrawlProdArgs(["--source", "3", "--source", "12"])).toEqual({
       vars: ["CRAWL_SOURCE_IDS:3,12", "CRAWL_FORCE:1"],
     });
   });
 
-  it("--force は --source なしでは使えない", () => {
-    expect(() => parseCrawlProdArgs(["--force"])).toThrow("--source");
+  it("--force はなくなったので知らない引数としてエラー", () => {
+    expect(() => parseCrawlProdArgs(["--force"])).toThrow("--force");
   });
 
   it("--source の値が数字でなければエラー", () => {
