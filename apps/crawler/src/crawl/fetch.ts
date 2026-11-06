@@ -7,8 +7,10 @@ export const DEFAULT_TIMEOUT_MS = 20_000;
 export const DEFAULT_DELAY_SEC = 1;
 /** Crawl-delay が大きすぎるときの上限（1 回の Cron 実行の中で待ち切れる長さ） */
 export const MAX_DELAY_SEC = 60;
-/** 取得頻度の上限。1 日 1 回程度にしたいので、前回から 20 時間あける */
+/** 取得頻度の上限。1 日 1 回程度にしたいので、最後に成功した取得から 20 時間あける */
 export const MIN_INTERVAL_HOURS = 20;
+/** 失敗した収集元を取り直すまでの間隔。1 回目（03:00 JST）から 2 回目（12:00 JST）の Cron までの 9 時間より短くとる */
+export const RETRY_INTERVAL_HOURS = 6;
 
 export class FetchError extends Error {
   constructor(
@@ -118,10 +120,19 @@ export class HostThrottle {
   }
 }
 
-/** 前回の取得開始（ISO 8601）から MIN_INTERVAL_HOURS 以上たっているか */
-export function isDue(lastStartedAt: string | null, now: Date): boolean {
-  if (!lastStartedAt) return true;
-  const last = new Date(lastStartedAt).getTime();
+/** 最後に成功した取得の開始（ISO 8601）から MIN_INTERVAL_HOURS 以上たっているか */
+export function isDue(lastOkStartedAt: string | null, now: Date): boolean {
+  return elapsedAtLeast(lastOkStartedAt, now, MIN_INTERVAL_HOURS);
+}
+
+/** 直前の取得の開始（ISO 8601）から RETRY_INTERVAL_HOURS 以上たっているか */
+export function isRetryDue(lastStartedAt: string | null, now: Date): boolean {
+  return elapsedAtLeast(lastStartedAt, now, RETRY_INTERVAL_HOURS);
+}
+
+function elapsedAtLeast(startedAt: string | null, now: Date, hours: number): boolean {
+  if (!startedAt) return true;
+  const last = new Date(startedAt).getTime();
   if (Number.isNaN(last)) return true;
-  return now.getTime() - last >= MIN_INTERVAL_HOURS * 60 * 60 * 1000;
+  return now.getTime() - last >= hours * 60 * 60 * 1000;
 }

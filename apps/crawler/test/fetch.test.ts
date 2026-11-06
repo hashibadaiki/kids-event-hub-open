@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchDocument, FetchError, USER_AGENT, HostThrottle, isDue } from "../src/crawl/fetch";
+import { fetchDocument, FetchError, USER_AGENT, HostThrottle, isDue, isRetryDue } from "../src/crawl/fetch";
 
 describe("fetchDocument", () => {
   it("連絡先付きの User-Agent で取得する", async () => {
@@ -80,5 +80,14 @@ describe("isDue（取得頻度の上限: 1 日 1 回程度）", () => {
     expect(isDue(null, now)).toBe(true);
     expect(isDue("2026-11-02T18:00:00.000Z", now)).toBe(true);
     expect(isDue("2026-11-03T00:00:00.000Z", now)).toBe(false);
+  });
+});
+
+describe("isRetryDue（失敗した収集元の取り直し）", () => {
+  const now = new Date("2026-11-03T18:00:00Z");
+  it("直前の取得開始から 6 時間たっていれば取り直す", () => {
+    expect(isRetryDue(null, now)).toBe(true);
+    expect(isRetryDue("2026-11-03T13:00:00.000Z", now)).toBe(false);
+    expect(isRetryDue("2026-11-03T12:00:00.000Z", now)).toBe(true);
   });
 });

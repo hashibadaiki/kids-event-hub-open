@@ -741,3 +741,61 @@ describe("crawlAll", () => {
     expect(second).toEqual([]);
   });
 });
+
+describe("crawlAll: 直前に失敗した収集元は 2 回目の Cron で取り直す", () => {
+  const ICS = "https://example.jp/cal.ics";
+  const ROBOTS = "https://example.jp/robots.txt";
+  const nightly = "2026-11-04T18:00:00Z";
+  const hoursLater = (h: number) => new Date(new Date(nightly).getTime() + h * 60 * 60 * 1000).toISOString();
+  const broken = () => new Response("origin down", { status: 521 });
+
+  let routes: Routes;
+  let target: number;
+  beforeEach(async () => {
+    routes = { [ICS]: new Response(ics, { headers: { "content-type": "text/calendar" } }) };
+    target = await addSource(ICS, "ical");
+  });
+
+  const crawlAt = (iso: string) => crawlAll(env.DB, { ...deps(routes), now: () => new Date(iso) });
+
+  it("直前が failed で 6 時間以上たっていれば対象になり、相手が直っていれば成功する", async () => {
+    routes[ROBOTS] = broken;
+    expect((await crawlAt(nightly)).map((r) => r.status)).toEqual(["failed"]);
+
+    delete routes[ROBOTS];
+    const retry = await crawlAt(hoursLater(9));
+    expect(retry.map((r) => [r.sourceId, r.status])).toEqual([[target, "success"]]);
+    expect((await runs()).map((r) => r.status)).toEqual(["failed", "success"]);
+    expect((await events()).length).toBeGreaterThan(0);
+  });
+
+  it("直前が failed でも 6 時間たっていなければ対象外", async () => {
+    routes[ROBOTS] = broken;
+    expect((await crawlAt(nightly)).map((r) => r.status)).toEqual(["failed"]);
+    delete routes[ROBOTS];
+    expect(await crawlAt(hoursLater(5))).toEqual([]);
+  });
+
+  it("直前が success なら 20 時間たっていない 2 回目の Cron では対象外", async () => {
+    expect((await crawlAt(nightly)).map((r) => r.status)).toEqual(["success"]);
+    expect(await crawlAt(hoursLater(9))).toEqual([]);
+  });
+
+  it("失敗が続いても Cron のたびに取り直す（1 日 2 回）", async () => {
+    routes[ROBOTS] = broken;
+    expect((await crawlAt(nightly)).map((r) => r.status)).toEqual(["failed"]);
+    expect((await crawlAt(hoursLater(9))).map((r) => r.status)).toEqual(["failed"]);
+    expect((await crawlAt(hoursLater(24))).map((r) => r.status)).toEqual(["failed"]);
+    expect((await runs()).length).toBe(3);
+  });
+
+  it("取り直しで成功したら、次は成功した取得から 20 時間あける", async () => {
+    routes[ROBOTS] = broken;
+    expect((await crawlAt(nightly)).map((r) => r.status)).toEqual(["failed"]);
+    delete routes[ROBOTS];
+    expect((await crawlAt(hoursLater(9))).map((r) => r.status)).toEqual(["success"]);
+
+    expect(await crawlAt(hoursLater(24))).toEqual([]);
+    expect((await crawlAt(hoursLater(33))).map((r) => [r.sourceId, r.status])).toEqual([[target, "success"]]);
+  });
+});

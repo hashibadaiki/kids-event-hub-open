@@ -9,7 +9,7 @@ export type CrawlerEnv = {
   CLAUDE_MODEL?: string;
 };
 
-/** Cron Trigger（1 日 1 回）でクロールする Worker */
+/** Cron Trigger でクロールする Worker。03:00 JST に全収集元、12:00 JST は最後の成功から 20 時間以上あいた収集元（直前に失敗したもの・未取得のもの）の取り直し（対象は crawlAll が選ぶ） */
 export default {
   async scheduled(_controller, env, ctx) {
     const claude = env.ANTHROPIC_API_KEY

@@ -37,7 +37,7 @@ pnpm sync-sources --remote    # 本番 D1 に反映（オーナーのみ）
 
 ### 収集方針とクローラー
 
-クローラー（`apps/crawler`）は Cron Trigger で 1 日 1 回（03:00 JST）、クロール対象の収集元を順に取得します。
+クローラー（`apps/crawler`）は Cron Trigger で 03:00 JST にクロール対象の収集元を順に取得します。12:00 JST にもう 1 回動き、最後に成功した取得から 20 時間以上あいている収集元（直前の取得が失敗したもの、まだ取れていないもの）を取り直します（深夜の保守時間帯と重なって取れなかった分の救済。成功した収集元は 20 時間あけるので、この回では取りません）。
 
 **収集元ごとの利用条件の確認**（登録前。`pnpm check-policy <URL>` が提案し、オーナーが確定して `sources.yaml` の `policy` に書く）
 
@@ -49,7 +49,7 @@ pnpm sync-sources --remote    # 本番 D1 に反映（オーナーのみ）
 
 公共・公益性の高い情報は、書き手が自動取得を想定せずに一般的な文言を置いていることが多いため、曖昧な記述は次の配慮をした上で進めます。
 
-- 取得頻度は 1 日 1 回程度（前回から 20 時間たっていない収集元は取得しない）。同じホストへは robots.txt の `Crawl-delay`（なければ 1 秒、上限 60 秒）以上あける
+- 取得頻度は 1 日 1 回程度（最後に成功した取得から 20 時間たっていない収集元は取得しない。失敗した収集元は 6 時間以上あけて取り直すので、失敗が続いても 1 日 2 回まで）。同じホストへは robots.txt の `Crawl-delay`（なければ 1 秒、上限 60 秒）以上あける
 - User-Agent に連絡先を明記: `kids-event-hub-crawler/0.1 (+https://github.com/hashibadaiki/kids-event-hub-open)`
 - 本文は転載せず、Claude が書いた 100 文字以内の要約と元 URL へのリンクのみ載せる。JSON-LD / iCal / RSS の説明文も Claude で要約する（説明文そのものは保存しない）。API キーがない・要約に失敗したときは要約なしで保存する
 - クロールのたびに robots.txt を確認し、禁止されたパスは取得しない。その収集元は `status = rejected` / `policy_status = ng` にし、`policy_note` に robots.txt の URL・該当した規則・対象 URL・検出日時を残す（`crawl_runs` にも failed として記録）。sources.yaml で `policy.status: ng` にした収集元も rejected で登録する。rejected は同期しても approved に戻らないので、解除するときは D1 の行を直接直す
@@ -194,7 +194,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  C["クロール（1 日 1 回）"] --> S["品質を採点<br/>日付・場所・対象年齢の取得率など"]
+  C["クロール（03:00 JST。失敗分は 12:00 に取り直し）"] --> S["品質を採点<br/>日付・場所・対象年齢の取得率など"]
   S -- "閾値 0.7 以上" --> OK["そのまま"]
   S -- "閾値未満" --> IM["improver<br/>抽出設定の改善案"]
   IM --> V["verifier<br/>保存済みデータで新旧を再抽出・採点"]
