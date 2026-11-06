@@ -48,7 +48,7 @@ description: 収集元（自治体・公共施設のイベントページや PDF
 
 6. **初回クロール**
    - `cd apps/crawler && pnpm dev` でローカルのクローラーを起動し、`curl "http://localhost:8787/__scheduled?cron=0+18+*+*+*"` で Cron を起動する（ローカル D1 の approved・有効・ng でない収集元のうち、20 時間以内に取得していないものが対象）
-   - `pnpm exec wrangler d1 execute kids-event-hub --local --command "SELECT * FROM crawl_runs ORDER BY id DESC LIMIT 5"` で、取れた件数（extracted_count）・日付が取れた件数（date_found_count）・保存数・失敗（error_message）を報告する
+   - `cd apps/web && pnpm exec wrangler d1 execute kids-event-hub --local --command "SELECT * FROM crawl_runs ORDER BY id DESC LIMIT 5"`（クローラーと同じ apps/web のローカル D1）で、取れた件数（extracted_count）・日付が取れた件数（date_found_count）・保存数・失敗（error_message）を報告する
    - HTML の収集元は Claude API を使うので、`apps/crawler/.dev.vars` に `ANTHROPIC_API_KEY` が必要。なければその旨を伝える（キーをチャットに貼ってもらわない）。PDF は #8 の実装後
 
 7. **報告**: 追加した行、policy の判定と根拠、同期結果、オーナーに頼むこと（`pnpm sync-sources --remote`）をまとめる。変更は issue のブランチでコミットする（`main` に直接 push しない）
