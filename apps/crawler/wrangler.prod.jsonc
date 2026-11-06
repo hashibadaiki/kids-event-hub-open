@@ -1,0 +1,15 @@
+// 手元から本番 D1 に向けてクロールするための設定（pnpm crawl-prod 用。デプロイには使わない）
+{
+  "name": "kids-event-hub-crawler",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kids-event-hub",
+      "database_id": "df666d2a-5dd8-4fdd-ae32-0910664efe80",
+      "migrations_dir": "../../packages/db/migrations",
+      "remote": true
+    }
+  ]
+}

@@ -1,8 +1,9 @@
 import { createClaudeClient } from "./claude";
+import { adhocOptionsFromEnv, CRAWL_DONE, type AdhocEnv } from "./crawl/adhoc";
 import { crawlAll } from "./crawl/run";
 import { improveLowQuality } from "./improve/improve";
 
-export type CrawlerEnv = {
+export type CrawlerEnv = AdhocEnv & {
   DB: D1Database;
   /** wrangler secret put ANTHROPIC_API_KEY（オーナーが設定）。未設定なら HTML の LLM 抽出は failed になる */
   ANTHROPIC_API_KEY?: string;
@@ -18,12 +19,16 @@ export default {
     const now = () => new Date();
     ctx.waitUntil(
       (async () => {
-        const results = await crawlAll(env.DB, {
-          fetch: (input, init) => fetch(input, init),
-          claude,
-          now,
-          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-        });
+        const results = await crawlAll(
+          env.DB,
+          {
+            fetch: (input, init) => fetch(input, init),
+            claude,
+            now,
+            sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+          },
+          adhocOptionsFromEnv(env),
+        );
         for (const r of results) {
           console.log(
             JSON.stringify({ source: r.sourceId, status: r.status, type: r.type, extracted: r.extracted, dateFound: r.dateFound, upserted: r.upserted, quality: r.quality?.score ?? null, error: r.error }),
@@ -33,7 +38,9 @@ export default {
         for (const r of await improveLowQuality(env.DB, results, { claude, now })) {
           console.log(JSON.stringify({ improve: r.sourceId, decision: r.decision, reason: r.reason }));
         }
-      })(),
+      })()
+        .catch((e) => console.error(e))
+        .finally(() => console.log(CRAWL_DONE)),
     );
   },
 } satisfies ExportedHandler<CrawlerEnv>;
