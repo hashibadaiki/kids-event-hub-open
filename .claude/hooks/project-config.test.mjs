@@ -52,6 +52,12 @@ test("スキルが定義されている", () => {
   }
 });
 
+test("ローカルのクローラーは sync-sources と同じ apps/web のローカル D1 を使う", () => {
+  const dev = JSON.parse(read("apps/crawler/package.json")).scripts.dev;
+  assert.match(dev, /--test-scheduled/);
+  assert.match(dev, /--persist-to \.\.\/web\/\.wrangler\/state(\s|$)/);
+});
+
 test("MCP の検索サーバーを Claude Code に登録している", () => {
   const mcp = JSON.parse(read(".mcp.json"));
   const server = mcp.mcpServers["kids-event-hub"];

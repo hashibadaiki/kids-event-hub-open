@@ -64,7 +64,7 @@ pnpm sync-sources --remote    # 本番 D1 に反映（オーナーのみ）
 pnpm check-policy https://example.jp/events/   # robots.txt・規約を確認して policy を提案（書き込まない）
 pnpm try-extract https://example.jp/dayori.pdf  # 取得・抽出して結果と日付取得率を表示（書き込まない。ANTHROPIC_API_KEY が必要）
 pnpm try-extract https://example.jp/kodomo/ pdf # 一覧ページから PDF をたどる場合
-cd apps/crawler && pnpm dev                     # ローカル D1 で起動（--test-scheduled）
+cd apps/crawler && pnpm dev                     # apps/web と同じローカル D1 で起動（--test-scheduled）
 curl "http://localhost:8787/__scheduled?cron=0+18+*+*+*"   # Cron を手動で起動
 ```
 
