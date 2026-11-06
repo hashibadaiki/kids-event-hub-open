@@ -76,7 +76,15 @@ describe("toEventRow", () => {
       categories: ["craft"],
       sourceUrl: "https://a.jp/list",
     });
-    expect(row!.dedupKey).toBe(dedupKeyOf("香川県", "2026-11-15T14:00", "工作教室「どんぐりごま」"));
+    expect(row!.dedupKey).toBe(dedupKeyOf("香川県", "2026-11-15T14:00", "工作教室「どんぐりごま」", null));
+  });
+
+  it("重複キーには会場が入り、会場の表記ゆれ（全角・空白・記号）は同じキーになる", () => {
+    const seto = toEventRow({ title: "おはなし会", start: "2026-12-12T11:00", venue: "瀬戸町図書館" }, ctx)!;
+    const mitsu = toEventRow({ title: "おはなし会", start: "2026-12-12T11:00", venue: "御津図書館" }, ctx)!;
+    expect(seto.dedupKey).not.toBe(mitsu.dedupKey);
+    expect(dedupKeyOf("香川県", "2026-12-12", "おはなし会", "瀬戸町 図書館")).toBe(dedupKeyOf("香川県", "2026-12-12T11:00", "おはなし会", "瀬戸町図書館"));
+    expect(dedupKeyOf("香川県", "2026-12-12", "おはなし会", null)).toBe(dedupKeyOf("香川県", "2026-12-12", "おはなし会", ""));
   });
 
   it("日付が取れない候補は保存しない（null）", () => {
@@ -365,6 +373,79 @@ describe("crawlSource", () => {
     const r = await crawlSource(env.DB, await source(id), deps({ "https://example.jp/cal.ics": new Response("x", { status: 500 }) }));
     expect(r.status).toBe("failed");
     expect((await runs())[0]).toMatchObject({ status: "failed", error_message: expect.stringContaining("500") });
+  });
+});
+
+describe("crawlSource: 同じ日・同じタイトルのイベントの会場による区別", () => {
+  const url = "https://example.jp/events/";
+  type Item = { title: string; date_text: string; venue?: string };
+  const crawlWith = async (id: number, items: Item[]) =>
+    crawlSource(
+      env.DB,
+      await source(id),
+      deps({ [url]: new Response(page, { headers: { "content-type": "text/html" } }) }, { callTool: vi.fn(async () => ({ events: items })) }),
+    );
+  const venues = async () =>
+    (await env.DB.prepare("SELECT id, source_id, venue, dedup_key FROM events ORDER BY id").all<{ id: number; source_id: number; venue: string | null; dedup_key: string }>()).results;
+  const twoLibraries: Item[] = [
+    { title: "おはなし会", date_text: "12月12日 11:00", venue: "瀬戸町図書館" },
+    { title: "おはなし会", date_text: "12月12日 11:00", venue: "御津図書館" },
+  ];
+
+  it("会場がはっきり違えば別々に保存し、2 回目も二重登録しない", async () => {
+    const id = await addSource(url);
+    expect(await crawlWith(id, twoLibraries)).toMatchObject({ upserted: 2, duplicates: 0 });
+    expect(await crawlWith(id, twoLibraries)).toMatchObject({ upserted: 2, duplicates: 0 });
+    expect((await venues()).map((e) => e.venue)).toEqual(["瀬戸町図書館", "御津図書館"]);
+  });
+
+  it("別の収集元にある同じイベントは、会場の表記が違っても重複として入れない", async () => {
+    const a = await addSource(url);
+    const b = await addSource("https://other.jp/list");
+    await crawlWith(a, twoLibraries);
+    const r = await crawlSource(
+      env.DB,
+      await source(b),
+      deps(
+        { "https://other.jp/list": new Response(page, { headers: { "content-type": "text/html" } }) },
+        { callTool: vi.fn(async () => ({ events: [{ title: "おはなし会", date_text: "12月12日", venue: "岡山市立 瀬戸町図書館" }] })) },
+      ),
+    );
+    expect(r).toMatchObject({ upserted: 0, duplicates: 1 });
+    expect(await venues()).toHaveLength(2);
+  });
+
+  it("同じ収集元で会場の表記が変わったら、既存の行を更新する", async () => {
+    const id = await addSource(url);
+    await crawlWith(id, [{ title: "えほんのじかん", date_text: "12月23日", venue: "中央図書館" }]);
+    const [before] = await venues();
+    expect(await crawlWith(id, [{ title: "えほんのじかん", date_text: "12月23日", venue: "岡山市立中央図書館" }])).toMatchObject({ upserted: 1, duplicates: 0 });
+    const after = await venues();
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ id: before!.id, venue: "岡山市立中央図書館" });
+  });
+
+  it("会場が空の既存行は、会場の違う 2 件のうち 1 件で更新し、もう 1 件を新しく入れる", async () => {
+    const id = await addSource(url);
+    await crawlWith(id, [{ title: "おはなし会", date_text: "12月12日 11:00" }]);
+    expect(await crawlWith(id, twoLibraries)).toMatchObject({ upserted: 2, duplicates: 0 });
+    expect((await venues()).map((e) => e.venue)).toEqual(["瀬戸町図書館", "御津図書館"]);
+  });
+
+  it("会場の入っていない旧形式の重複キーの行も、同じイベントなら更新して新しいキーに置き換える", async () => {
+    const id = await addSource(url);
+    const old = await env.DB.prepare(
+      "INSERT INTO events (source_id, title, start_at, prefecture, venue, categories, source_url, dedup_key) VALUES (?, 'おはなし会', '2026-12-12T11:00', '香川県', '瀬戸町図書館', '[]', ?, '香川県|2026-12-12|おはなし会') RETURNING id",
+    )
+      .bind(id, url)
+      .first<{ id: number }>();
+    expect(await crawlWith(id, twoLibraries)).toMatchObject({ upserted: 2, duplicates: 0 });
+    const rows = await venues();
+    expect(rows.map((e) => [e.id === old!.id, e.venue])).toEqual([
+      [true, "瀬戸町図書館"],
+      [false, "御津図書館"],
+    ]);
+    expect(rows[0]!.dedup_key).toBe(dedupKeyOf("香川県", "2026-12-12", "おはなし会", "瀬戸町図書館"));
   });
 });
 

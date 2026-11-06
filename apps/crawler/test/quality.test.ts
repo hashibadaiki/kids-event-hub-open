@@ -53,6 +53,17 @@ describe("scoreExtraction", () => {
     const q = scoreExtraction([{ title: "親子リトミック（3歳から）", dateText: "11月15日", venue: "公民館", description: "対象は3歳以上" }], ctx);
     expect(q.ageRate).toBe(1);
   });
+
+  it("同じ日・同じタイトルでも会場がはっきり違えば重複に数えない", () => {
+    const q = scoreExtraction(
+      [
+        { title: "おはなし会", dateText: "12月12日", venue: "瀬戸町図書館" },
+        { title: "おはなし会", dateText: "12月12日", venue: "御津図書館" },
+      ],
+      ctx,
+    );
+    expect(q.duplicateRate).toBe(0);
+  });
 });
 
 describe("needsImprovement", () => {
