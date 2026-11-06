@@ -1,31 +1,22 @@
 import { describe, it, expect } from "vitest";
 import prodConfig from "../wrangler.prod.jsonc?raw";
 import cronConfig from "../wrangler.jsonc?raw";
-import { adhocOptionsFromEnv, parseCrawlProdArgs } from "../src/crawl/adhoc";
-
-describe("adhocOptionsFromEnv", () => {
-  it("変数がなければ Cron と同じ（絞り込みなし）", () => {
-    expect(adhocOptionsFromEnv({})).toEqual({});
-  });
-
-  it("CRAWL_SOURCE_IDS と CRAWL_FORCE を読む", () => {
-    expect(adhocOptionsFromEnv({ CRAWL_SOURCE_IDS: "3,12", CRAWL_FORCE: "1" })).toEqual({ sourceIds: [3, 12], force: true });
-  });
-
-  it("id が数字でなければエラー", () => {
-    expect(() => adhocOptionsFromEnv({ CRAWL_SOURCE_IDS: "3,x" })).toThrow("CRAWL_SOURCE_IDS");
-  });
-});
+import { parseCrawlProdArgs } from "../src/crawl/adhoc";
 
 describe("parseCrawlProdArgs", () => {
-  it("引数なしなら全収集元を間隔の制限なしで取る", () => {
-    expect(parseCrawlProdArgs([])).toEqual({ vars: ["CRAWL_FORCE:1"] });
+  it("引数なしなら本番 D1 の全収集元を間隔の制限なしで取る", () => {
+    expect(parseCrawlProdArgs([])).toEqual({ local: false, options: { force: true } });
   });
 
-  it("--source は複数指定でき、wrangler dev の --var にする（間隔の制限はかけない）", () => {
+  it("--source は複数指定できる（間隔の制限はかけない）", () => {
     expect(parseCrawlProdArgs(["--source", "3", "--source", "12"])).toEqual({
-      vars: ["CRAWL_SOURCE_IDS:3,12", "CRAWL_FORCE:1"],
+      local: false,
+      options: { sourceIds: [3, 12], force: true },
     });
+  });
+
+  it("--local なら本番ではなくローカル D1 に向ける（動作確認用）", () => {
+    expect(parseCrawlProdArgs(["--local", "--source", "3"])).toEqual({ local: true, options: { sourceIds: [3], force: true } });
   });
 
   it("--force はなくなったので知らない引数としてエラー", () => {
@@ -49,7 +40,6 @@ describe("wrangler.prod.jsonc", () => {
     const prod = parse(prodConfig);
     const cron = parse(cronConfig);
     expect(prod.d1_databases).toEqual([{ ...cron.d1_databases[0], remote: true }]);
-    expect(prod.main).toBe(cron.main);
     expect(prod.triggers).toBeUndefined();
   });
 });

@@ -482,11 +482,33 @@ function upsert(db: D1Database, sourceId: number, runId: number, r: EventRow): D
  * クロール対象（approved・有効・policy が ng でない。packages/db の crawlTargets と同じ条件）のうち、
  * 最後に成功（success / partial）した取得から MIN_INTERVAL_HOURS 以上、かつ直前の取得から RETRY_INTERVAL_HOURS 以上たった収集元を順にクロールする。
  * 成功した収集元は 1 日 1 回、失敗した収集元は 2 回目の Cron で取り直す。
- * アドホック実行（bin/crawl-prod.ts）では sourceIds で対象を絞り、force で間隔の制限を外せる
+ * アドホック実行（bin/crawl-prod.ts）では sourceIds で対象を絞り、force で間隔の制限を外せる。
+ * 始める前に、途中で打ち切られて running のまま残った取得を failed にする
  */
-export type CrawlAllOptions = { sourceIds?: number[]; force?: boolean };
+export type CrawlAllOptions = {
+  sourceIds?: number[];
+  force?: boolean;
+  onResult?: (result: CrawlResult) => void | Promise<void>;
+};
+
+/** これより長く running の取得は打ち切られたとみなす（Cron の waitUntil は最長 15 分） */
+export const ABANDONED_RUN_HOURS = 1;
+
+export async function closeAbandonedRuns(db: D1Database, now: Date): Promise<number> {
+  const before = new Date(now.getTime() - ABANDONED_RUN_HOURS * 60 * 60 * 1000).toISOString();
+  const r = await db
+    .prepare(
+      `UPDATE crawl_runs SET status = 'failed', finished_at = ?,
+         error_message = '実行が途中で打ち切られました（${ABANDONED_RUN_HOURS} 時間以上 running のまま）'
+       WHERE status = 'running' AND started_at < ?`,
+    )
+    .bind(now.toISOString(), before)
+    .run();
+  return r.meta.changes ?? 0;
+}
 
 export async function crawlAll(db: D1Database, deps: CrawlDeps, options: CrawlAllOptions = {}): Promise<CrawlResult[]> {
+  await closeAbandonedRuns(db, deps.now());
   const only = options.sourceIds ? new Set(options.sourceIds) : null;
   const { results } = await db
     .prepare(
@@ -503,7 +525,9 @@ export async function crawlAll(db: D1Database, deps: CrawlDeps, options: CrawlAl
   for (const s of results) {
     if (only && !only.has(s.id)) continue;
     if (!options.force && (!isDue(s.last_ok_started_at, deps.now()) || !isRetryDue(s.last_started_at, deps.now()))) continue;
-    out.push(await crawlSource(db, s, { ...deps, throttle }));
+    const result = await crawlSource(db, s, { ...deps, throttle });
+    out.push(result);
+    await options.onResult?.(result);
   }
   return out;
 }
