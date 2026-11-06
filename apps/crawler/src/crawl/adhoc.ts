@@ -17,19 +17,13 @@ export function adhocOptionsFromEnv(env: AdhocEnv): CrawlAllOptions {
 
 export function parseCrawlProdArgs(argv: string[]): { vars: string[] } {
   const ids: string[] = [];
-  let force = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--force") force = true;
-    else if (arg === "--source") {
-      const id = argv[++i];
-      if (!id || !/^\d+$/.test(id)) throw new Error(`--source には収集元の id（数字）を指定してください: ${id ?? "（なし）"}`);
-      ids.push(id);
-    } else throw new Error(`知らない引数です: ${arg}`);
+    if (arg !== "--source") throw new Error(`知らない引数です: ${arg}`);
+    const id = argv[++i];
+    if (!id || !/^\d+$/.test(id)) throw new Error(`--source には収集元の id（数字）を指定してください: ${id ?? "（なし）"}`);
+    ids.push(id);
   }
-  if (force && ids.length === 0) throw new Error("--force は --source と一緒に指定してください");
-  const vars: string[] = [];
-  if (ids.length) vars.push(`CRAWL_SOURCE_IDS:${ids.join(",")}`);
-  if (force) vars.push("CRAWL_FORCE:1");
-  return { vars };
+  const vars = ids.length ? [`CRAWL_SOURCE_IDS:${ids.join(",")}`] : [];
+  return { vars: [...vars, "CRAWL_FORCE:1"] };
 }

@@ -775,8 +775,13 @@ describe("crawlAll: アドホック実行の絞り込みと force", () => {
     expect(await crawlAll(env.DB, deps(routes), { sourceIds: [ng, off, pending], force: true })).toEqual([]);
   });
 
-  it("force は sourceIds なしでは使えない", async () => {
-    await expect(crawlAll(env.DB, deps(routes), { force: true })).rejects.toThrow("sourceIds");
+  it("sourceIds なしの force は、対象の全収集元を間隔の制限なしで取り直す", async () => {
+    const a = await addSource(A, "ical");
+    const b = await addSource(B, "ical");
+    await addSource("https://example.jp/ng.ics", "ical", { policy_status: "ng" });
+    await crawlAll(env.DB, deps(routes));
+    const again = await crawlAll(env.DB, deps(routes), { force: true });
+    expect(again.map((x) => x.sourceId)).toEqual([a, b]);
   });
 });
 
