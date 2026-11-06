@@ -12,7 +12,7 @@
 | `crawl_runs` | 実行ログ。使用した `config_id`、`status`、開始/終了・所要時間、`fetched_count` / `extracted_count` / `date_found_count` / `upserted_count`、`quality_score`（#11）、エラー |
 | `raw_documents` | 取得した生データ（HTML などのテキスト）。自動改善の検証用で非公開。収集元ごとに新しい 3 件だけ残す（#11） |
 | `config_evaluations` | 自動改善の前後比較。旧版・候補の版、両方のスコアと指標、`decision`（adopted / rejected）、理由（#11） |
-| `events` | イベント。1 開催日（連続した期間は開始〜終了で 1 つ）= 1 行。`dedup_key` で一意（upsert のキー）。`(prefecture, start_at)` にインデックス |
+| `events` | イベント。1 開催日（連続した期間は開始〜終了で 1 つ）= 1 行。`dedup_key`（都道府県 + 開始日 + 正規化したタイトル + 正規化した会場）で一意。保存時は同じ収集元で `dedup_key` が同じ行、なければ `isDuplicate`（日付・タイトル・会場の類似。会場が片方でも空なら会場は問わない）で同じとみなせる行を更新し、`dedup_key` も新しい形に置き換える。別の収集元に同じイベントがあれば先に入った方を残す。会場が入る前の旧形式のキー（都道府県 + 開始日 + タイトル）の行は、次のクロールで更新されたときに新しい形になる（新旧は区切りの数が違うのでぶつからない）。`(prefecture, start_at)` にインデックス |
 
 ## 決めたこと
 

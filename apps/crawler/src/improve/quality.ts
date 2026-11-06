@@ -60,7 +60,7 @@ export function scoreExtraction(raws: RawEvent[], ctx: Ctx): QualityReport {
     if (!raw.start && raw.dateText && normalizeDate(raw.dateText, { referenceDate: ctx.referenceDate })?.weekdayMismatch) weekdayMismatches++;
     if (row) {
       const c = { title: row.title, start: row.startAt, venue: row.venue };
-      if (kept.some((k) => k.dedupKey === row.dedupKey || isDuplicate({ title: k.title, start: k.startAt, venue: k.venue }, c))) duplicates++;
+      if (kept.some((k) => isDuplicate({ title: k.title, start: k.startAt, venue: k.venue }, c))) duplicates++;
       else kept.push(row);
     }
   });
@@ -139,7 +139,7 @@ export function newEvents(baseline: RawEvent[], candidate: RawEvent[], ctx: Ctx)
     const row = toEventRow(raw, ctx);
     if (!row) return !before.some((b) => !b.row && b.raw.title.trim() === raw.title.trim());
     const c = { title: row.title, start: row.startAt, venue: row.venue };
-    return !before.some((b) => b.row && (b.row.dedupKey === row.dedupKey || isDuplicate({ title: b.row.title, start: b.row.startAt, venue: b.row.venue }, c)));
+    return !before.some((b) => b.row && isDuplicate({ title: b.row.title, start: b.row.startAt, venue: b.row.venue }, c));
   });
 }
 
@@ -151,7 +151,7 @@ export function lostEvents(baseline: RawEvent[], candidate: RawEvent[], ctx: Ctx
     const row = toEventRow(raw, ctx);
     if (!row || !has(raw.title) || !has(raw.venue)) continue;
     const c = { title: row.title, start: row.startAt, venue: row.venue };
-    if (!after.some((a) => a.dedupKey === row.dedupKey || isDuplicate({ title: a.title, start: a.startAt, venue: a.venue }, c))) lost++;
+    if (!after.some((a) => isDuplicate({ title: a.title, start: a.startAt, venue: a.venue }, c))) lost++;
   }
   return lost;
 }
