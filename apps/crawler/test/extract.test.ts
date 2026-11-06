@@ -116,7 +116,14 @@ describe("extractRss", () => {
   it("1 行の本文・見出しに似た行頭・月日のない見出しでも開催日を失わない", () => {
     const ref = { referenceDate: new Date("2026-11-06T00:00:00+09:00") };
     const starts = extractRss(rssDateEdgeCases).map((e) => normalizeDate(e.dateText!, ref)?.start ?? null);
-    expect(starts).toEqual(["2026-12-05", "2026-12-19T14:00", "2026-12-06T10:00", "2026-12-05T10:00"]);
+    expect(starts).toEqual([
+      "2026-12-05",
+      "2026-12-19T14:00",
+      "2026-12-06T10:00",
+      "2026-12-05T10:00",
+      "2026-12-05T10:00",
+      "2026-12-05",
+    ]);
   });
 
   it("Atom の entry も扱う", () => {

@@ -42,7 +42,9 @@ function text(raw: string | null): string {
 const BULLET = "[\\s【〔［\\[(（■□●○◆◇・*]*";
 const LABEL_END = "(?:[】〕］\\])）:：]|\\s|$)";
 const DATE_LABEL_RE = new RegExp(`^${BULLET}(日時|開催日時?|日程|日にち|期日|会期|期間|とき|時間)${LABEL_END}`);
-const APPLY_LABEL_RE = new RegExp(`^${BULLET}(申込|申し込み|受付|応募|募集|締切|締め切り)`);
+const APPLY_LABEL_RE = new RegExp(
+  `^${BULLET}(申込|申し込み|受付|応募|募集|締切|締め切り)(期間|期限|期日|開始|締切|締め切り|方法)?${LABEL_END}`,
+);
 const APPLY_PERIOD_RE = /(申込|申し込み|受付|応募|募集)(期間|期限|期日|開始|締切|締め切り)/;
 const LABEL_ONLY_RE = new RegExp(`^${BULLET}[^0-9０-９]{1,8}?[】〕］\\])）:：\\s]*$`);
 const MONTH_DAY_RE = /[0-9０-９]{1,2}\s*[月/／]\s*[0-9０-９]{1,2}/;
