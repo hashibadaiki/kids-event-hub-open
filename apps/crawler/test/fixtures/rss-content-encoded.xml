@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>
+<title>みどり町図書館 行事のご案内</title>
+<item>
+  <title>こども工作教室「紙コップでロケットをつくろう」</title>
+  <link>https://example.jp/library/events/201</link>
+  <pubDate>Mon, 02 Nov 2026 09:00:00 +0900</pubDate>
+  <description><![CDATA[紙コップとゴムを使って、よく飛ぶロケットを作ります。作ったロケットは持ち帰れます。 &#8230; <a href="https://example.jp/library/events/201">Read more</a>]]></description>
+  <content:encoded><![CDATA[<p>紙コップとゴムを使って、よく飛ぶロケットを作ります。作ったロケットは持ち帰れます。</p>
+<p>申込期間：11月1日（日）～11月20日（金）</p>
+<p>日時：12月5日（土）午前10時～11時30分</p>
+<p>会場：みどり町図書館 2階 多目的室</p>
+<p>対象：小学生（1・2年生は保護者同伴）</p>]]></content:encoded>
+</item>
+<item>
+  <title>おはなし会</title>
+  <link>https://example.jp/library/events/202</link>
+  <description><![CDATA[絵本の読み聞かせと手遊びを楽しみます。 &#8230; <a href="https://example.jp/library/events/202">Read more</a>]]></description>
+  <content:encoded><![CDATA[<dl><dt>受付</dt><dd>11月10日（火）から電話で</dd><dt>とき</dt><dd>11月28日（土）午後2時から</dd><dt>対象</dt><dd>3歳から</dd></dl>]]></content:encoded>
+</item>
+<item>
+  <title>親子で楽しむクリスマス会</title>
+  <link>https://example.jp/library/events/203</link>
+  <description><![CDATA[歌と工作で、ひと足早いクリスマスを楽しみます。 &#8230; <a href="https://example.jp/library/events/203">Read more</a>]]></description>
+  <content:encoded><![CDATA[<p>歌と工作で、ひと足早いクリスマスを楽しみます。</p><p>11月2日（月）から申込受付開始、先着20組。</p><p>12月12日（土）午後1時から、児童室で開催します。</p>]]></content:encoded>
+</item>
+</channel></rss>
