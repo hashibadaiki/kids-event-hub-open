@@ -58,6 +58,23 @@ test("ローカルのクローラーは sync-sources と同じ apps/web のロ�
   assert.match(dev, /--persist-to \.\.\/web\/\.wrangler\/state(\s|$)/);
 });
 
+test("apps/web と apps/crawler は同じ D1 database_id を使う", () => {
+  const ids = ["apps/web/wrangler.jsonc", "apps/crawler/wrangler.jsonc"].map(
+    (p) => read(p).match(/"database_id"\s*:\s*"([^"]+)"/)?.[1],
+  );
+  assert.ok(ids[0]);
+  assert.equal(ids[1], ids[0]);
+});
+
+test("スキルのローカル D1 への SQL は apps/web で実行する", () => {
+  for (const name of ["add-source", "crawl"]) {
+    for (const line of read(`.claude/skills/${name}/SKILL.md`).split("\n")) {
+      if (!/wrangler d1 execute/.test(line)) continue;
+      assert.match(line, /cd apps\/web && pnpm exec wrangler d1 execute/, `${name}: ${line.trim()}`);
+    }
+  }
+});
+
 test("MCP の検索サーバーを Claude Code に登録している", () => {
   const mcp = JSON.parse(read(".mcp.json"));
   const server = mcp.mcpServers["kids-event-hub"];
