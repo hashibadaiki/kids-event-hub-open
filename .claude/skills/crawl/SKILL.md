@@ -8,6 +8,7 @@ description: 収集元を 1 件ローカルでクロールし、取れた件数�
 ローカル D1 の収集元を 1 件クロールして結果を見る。本番のクロールは Cron（03:00 JST に全収集元、12:00 JST は直前に失敗した収集元の取り直し）に任せ、ここでは **ローカル D1 だけ**を使う（`--remote` は使わない）。
 
 SQL はすべて `cd apps/web && pnpm exec wrangler d1 execute kids-event-hub --local --command "<SQL>"` で実行する（以下 `d1 "<SQL>"` と書く）。
+クローラーの `pnpm dev` も同じ apps/web のローカル D1 を使う。テーブルがなければ先に `cd apps/web && pnpm exec wrangler d1 migrations apply kids-event-hub --local` と `pnpm sync-sources` を実行する。
 
 ## 手順
 
