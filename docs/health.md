@@ -3,7 +3,29 @@
 毎朝、前夜のクロールでエラーが出ていないか、品質が落ちていないかを定期ルーティンで確かめるための集計。
 全国規模（収集元が数千）でも読む側の負担が増えないよう、集計と異常の判定はサーバー側で済ませる。
 
-## 流れ
+## 全体の流れ
+
+```mermaid
+flowchart LR
+  C["03:00 JST クロール<br/>失敗分は 12:00 に取り直し"] --> R[("crawl_runs<br/>件数・日付取得率・品質スコア")]
+  R --> H["06:30 JST 健全性の集計<br/>直近 26 時間の最後の実行を<br/>過去 7 日の平均と比べる"]
+  H --> DB[("health_reports<br/>source_health")]
+  DB --> API["GET /api/health<br/>MCP get_health<br/>要約と異常のある収集元だけ"]
+  API --> RT["07:00 JST 定期ルーティン（Claude）<br/>異常を読み、原因の見立てを書く"]
+  RT -- "ok" --> END["issue は立てない"]
+  RT -- "anomaly / missing / API に届かない" --> I["issue（health-alert）<br/>異常の表・見立て・次の一手"]
+  I --> O(["人のチェック<br/>直すと決めたら ready を付ける"])
+  O --> DEV["開発ループ（Claude）<br/>planner → implementer<br/>抽出設定なら /improve"]
+  DEV --> PR["修正 PR"]
+  PR --> CI{{"CI<br/>typecheck → lint → test"}}
+  CI --> M["マージ"]
+  M -. "次のクロールから反映" .-> C
+```
+
+- 毎朝のルーティンは読むことと issue を立てることだけを行い、コードの変更・PR・デプロイはしない。同じ日の `health-alert` の issue がすでにあれば立てない
+- 修正に着手するかは人が決める（issue に `ready` を付ける）。そこから先は通常の開発ループ（README「Claude Code をソフトウェアファクトリーとして回す」）で、CI がグリーンなら Claude がマージする
+
+## 流れ（集計の詳細）
 
 1. crawler の Worker の 06:30 JST の Cron（`HEALTH_CRON`）が、クロールとは別に `writeHealthReport` を呼ぶ
    - クロールのジョブの最後で書かないのは、収集元が増えてジョブが打ち切られたときに集計まで届かず、毎日 `missing` と誤報になるため
