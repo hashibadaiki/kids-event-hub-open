@@ -56,6 +56,13 @@ describe("都道府県一覧 /", () => {
     expect(html).toContain(`data-copy="${command}"`);
   });
 
+  it("コネクタの名前は自由で、URL 欄には下の URL を貼ると案内する", async () => {
+    const html = await (await get("/")).text();
+    expect(html).toContain("名前は好きなもので構いません");
+    expect(html).toContain("URL 欄に、下の URL を貼り付けて追加する");
+    expect(html).not.toContain("名前に「こどもイベントさがし」");
+  });
+
   it("コピーボタンを動かすスクリプトを出す", async () => {
     const html = await (await get("/")).text();
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";

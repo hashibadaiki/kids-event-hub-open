@@ -37,14 +37,14 @@ export function McpGuide(props: { mcpUrl: string }) {
       </p>
       <h3>claude.ai / Claude Desktop</h3>
       <ol>
-        <li>下の URL をコピーする</li>
         <li>
           <a href="https://claude.ai/settings/connectors" target="_blank" rel="noopener">
             コネクタ設定
           </a>
           を開き「カスタムコネクタを追加」を選ぶ
         </li>
-        <li>名前に「こどもイベントさがし」、URL に貼り付けて追加する</li>
+        <li>名前は好きなもので構いません（例: こどもイベントさがし）</li>
+        <li>URL 欄に、下の URL を貼り付けて追加する</li>
       </ol>
       <CopyBlock text={props.mcpUrl} />
       <h3>Claude Code</h3>
