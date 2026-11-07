@@ -28,6 +28,8 @@ nav.days a{white-space:nowrap;padding:6px 10px;border:1px solid var(--line);bord
 dl.detail{display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
 dl.detail dt{color:var(--muted)}
 dl.detail dd{margin:0}
+a.back{display:inline-block;margin:12px 0 0;text-decoration:none}
+ul.more{padding-left:1.2em}
 a.source{display:block;text-align:center;padding:12px;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;text-decoration:none;margin:16px 0}
 footer{margin-top:24px;padding-bottom:24px}
 `;

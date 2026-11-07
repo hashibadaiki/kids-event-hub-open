@@ -2,7 +2,9 @@ import { Layout } from "./layout";
 import type { EventRecord } from "../repository";
 import type { Prefecture } from "../prefectures";
 import { formatAge, formatPrice, formatWhen, isPdfUrl } from "../format";
-import { searchPath } from "../search";
+import { MAX_KEYWORD_LENGTH, searchPath } from "../search";
+import { raw } from "hono/html";
+import { BACK_LINK_SCRIPT } from "./back-link";
 
 export function DetailPage(props: { url: string; event: EventRecord; prefecture?: Prefecture }) {
   const e = props.event;
@@ -11,6 +13,8 @@ export function DetailPage(props: { url: string; event: EventRecord; prefecture?
   const age = formatAge(e);
   const price = formatPrice(e);
   const day = e.startAt.slice(0, 10);
+  const pref = props.prefecture;
+  const dayList = pref ? searchPath({ slug: pref.slug, from: day, to: day }) : "/";
   return (
     <Layout
       title={e.title}
@@ -18,6 +22,10 @@ export function DetailPage(props: { url: string; event: EventRecord; prefecture?
       url={props.url}
       ogType="article"
     >
+      <a class="back" href={dayList}>
+        ← 一覧に戻る
+      </a>
+      <script>{raw(BACK_LINK_SCRIPT)}</script>
       <h1>{e.title}</h1>
       <dl class="detail">
         <dt>日時</dt>
@@ -50,12 +58,17 @@ export function DetailPage(props: { url: string; event: EventRecord; prefecture?
       <p class="muted">
         {pdf ? "PDF チラシ" : "掲載元のページ"}の内容を要約しています。申込方法や最新情報は掲載元でご確認ください。
       </p>
-      {props.prefecture && (
-        <p>
-          <a href={searchPath({ slug: props.prefecture.slug, from: day, to: day })}>
-            {props.prefecture.name}のこの日のイベント一覧へ
-          </a>
-        </p>
+      {pref && (
+        <ul class="more">
+          <li>
+            <a href={dayList}>{pref.name}のこの日のイベント一覧へ</a>
+          </li>
+          {e.venue && e.venue.length <= MAX_KEYWORD_LENGTH && (
+            <li>
+              <a href={`/${pref.slug}?${new URLSearchParams({ q: e.venue })}`}>この施設のイベント一覧へ</a>
+            </li>
+          )}
+        </ul>
       )}
     </Layout>
   );
