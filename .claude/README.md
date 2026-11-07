@@ -26,7 +26,7 @@
 
 | コマンド | 内容 |
 | --- | --- |
-| `/add-source <URL>` | robots.txt・規約を確認して `sources.yaml` に追加 → ローカル D1 に同期 → 初回クロール → PR をマージ → 本番 D1 に同期・クロール → 品質 0.95 を超えるまで `pnpm improve-prod`。途中でオーナーに質問しない |
+| `/add-source <URL>` | robots.txt・規約を確認して `sources.yaml` に追加 → ローカル D1 に同期 → 初回クロール → PR をマージ → 本番 D1 に同期・クロール → 伸びが止まるまで `pnpm improve-prod`（上限 0.95）。途中でオーナーに質問しない |
 | `/crawl <source>` | 収集元を 1 件ローカルでクロールし、件数・日付取得数・品質スコア・失敗理由を報告 |
 | `/improve <source>` | Improver → Verifier → 自動採用 / **人間の承認** / 却下 → `docs/improvement-log.md` に記録 |
 | `/review-pr <PR>` | Reviewer サブエージェントにレビューさせ、人間がマージを判断できる形にまとめる |
