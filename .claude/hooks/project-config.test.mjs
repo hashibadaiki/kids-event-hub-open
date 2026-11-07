@@ -44,6 +44,13 @@ test("レビュー役と検証役は書き込みツールを持たない", () =>
   }
 });
 
+test("レビュー役は PR のブランチに切り替えず、PR のコードを手元で実行しない", () => {
+  const reviewer = read(".claude/agents/reviewer.md");
+  assert.doesNotMatch(reviewer, /git\s+(switch|checkout|worktree)\b/);
+  assert.doesNotMatch(reviewer, /\b(pnpm|npm)\s+(i|install|add|ci|typecheck|lint|test|run|exec|dlx)\b|\bnpx\s/);
+  assert.match(reviewer, /check-runs/);
+});
+
 test("スキルが定義されている", () => {
   for (const name of ["add-source", "crawl", "improve", "review-pr"]) {
     const fm = frontmatter(read(`.claude/skills/${name}/SKILL.md`));
