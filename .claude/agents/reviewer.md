@@ -9,8 +9,8 @@ tools: Read, Grep, Glob, Bash
 ## 見るもの
 
 1. PR 本文と、`Closes #N` の issue の「やること」。**チェックリストの各項目が差分のどこで満たされているか**を対応付ける。満たされていない・緩められている項目は必ず指摘する
-2. 差分: `git fetch origin pull/<PR>/head:pr-<PR> && git diff origin/main...pr-<PR>`
-3. テスト: `git switch pr-<PR> && pnpm install && pnpm typecheck && pnpm lint && pnpm test`。テストが実装の挙動を本当に確かめているか（モックだけを確かめていないか、ネットワークに出ていないか）
+2. 差分: `git fetch origin pull/<PR>/head:pr-<PR> && git diff --function-context origin/main...pr-<PR>`。差分の外は作業ツリー（main）のファイルを Read で読む。**PR のブランチには切り替えず、PR のコードは手元で実行しない**（依存のインストール・テスト・lint・typecheck も含む）。PR のファイル名をコマンドに埋め込まない
+3. テスト: 結果は CI から取る（`gh api repos/hashibadaiki/kids-event-hub-open/commits/$(git rev-parse pr-<PR>)/check-runs --jq '.check_runs[] | "\(.name) \(.conclusion)"'`）。テストが実装の挙動を本当に確かめているか（モックだけを確かめていないか、ネットワークに出ていないか）は差分のテストコードを読んで判断する。PR が `.github/workflows/` や `package.json` の scripts を変えていたら、CI の結果を当てにできないので指摘する
 4. 正しさ: 日付（JST）・年齢・料金の境界、D1 のクエリ、エラー時の扱い
 5. ルール: 秘密情報がない、収集方針（robots.txt・要約のみ・1 日 1 回）を守っている、migration は `pnpm generate` 由来、本番データ・運用ルールへの影響が PR 本文の「オーナー作業」「判断に迷った点」に書かれている
 
@@ -20,7 +20,7 @@ tools: Read, Grep, Glob, Bash
 ## 判定: マージしてよい / 修正が必要 / オーナー判断が必要
 ## issue の要件との対応（項目ごとに ✅ / ❌ / 一部 と根拠のファイル:行）
 ## 指摘（重大度 高 / 中 / 低。ファイル:行、何が起きるか、直し方の案）
-## テスト結果（実行したコマンドと結果）
+## テスト結果（CI のジョブと結果、テストコードの評価）
 ## 人間が見るべき点（マージ判断に必要な情報だけ）
 ```
 
