@@ -1,7 +1,8 @@
 // 手元の Node から本番 D1 に（remote binding で）つなぎ、クロールと自動改善を 1 回だけ実行する（本番 D1 に書き込む。オーナーが実行する）
-// 使い方: pnpm crawl-prod [--source <id> ...] [--local]
+// 使い方: pnpm crawl-prod [--source <id> ...] [--url <収集元の URL> ...] [--local]
 //   引数なし       クロール対象の全収集元を、間隔の制限（成功から 20 時間 / 直前から 6 時間）なしで今すぐ取る
 //   --source <id>  その収集元だけ取る（複数指定可）
+//   --url <URL>    収集元を URL で指定する（ID は向け先の D1 で引く。複数指定可）
 //   --local        本番ではなく、ローカル D1（apps/web と共通）に向ける。動作確認用
 // 事前に wrangler login 済みであること。ANTHROPIC_API_KEY は apps/crawler/.dev.vars から読む
 import { fileURLToPath } from "node:url";
@@ -16,10 +17,10 @@ try {
   parsed = parseCrawlProdArgs(process.argv.slice(2));
 } catch (e) {
   console.error((e as Error).message);
-  console.error("使い方: pnpm crawl-prod [--source <id> ...] [--local]");
+  console.error("使い方: pnpm crawl-prod [--source <id> ...] [--url <収集元の URL> ...] [--local]");
   process.exit(1);
 }
-const { local, options } = parsed;
+const { local, options, urls } = parsed;
 
 const dir = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 const proxy = await getPlatformProxy<CrawlerEnv>(
@@ -34,9 +35,13 @@ try {
   if (!apiKey) console.error("ANTHROPIC_API_KEY が未設定です。HTML・PDF の抽出は failed になります");
   const claude = apiKey ? createClaudeClient({ apiKey, model: env.CLAUDE_MODEL || process.env.CLAUDE_MODEL || undefined }) : null;
 
-  const names = new Map(
-    (await env.DB.prepare("SELECT id, name FROM sources").all<{ id: number; name: string }>()).results.map((s) => [s.id, s.name]),
-  );
+  const rows = (await env.DB.prepare("SELECT id, name, url FROM sources").all<{ id: number; name: string; url: string }>()).results;
+  const names = new Map(rows.map((s) => [s.id, s.name]));
+  if (urls) {
+    const missing = urls.filter((u) => !rows.some((s) => s.url === u));
+    if (missing.length) throw new Error(`D1 にない URL です: ${missing.join(", ")}`);
+    options.sourceIds = [...(options.sourceIds ?? []), ...urls.map((u) => rows.find((s) => s.url === u)!.id)];
+  }
   const target = options.sourceIds ? `収集元 ${options.sourceIds.join(", ")}` : "全収集元";
   console.log(`${local ? "ローカル" : "本番"} D1 に向けてクロールします（${target}。間隔の制限なし）`);
 

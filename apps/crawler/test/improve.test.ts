@@ -4,7 +4,7 @@ import page from "./fixtures/page.html?raw";
 import { crawlSource, type CrawlDeps, type SourceRow } from "../src/crawl/run";
 import { extractHtml } from "../src/extract/html";
 import { parseExtractionConfig } from "../src/extract/config";
-import { ensureActiveConfig, improveSource, improveLowQuality, saveRawDocument, RAW_DOCS_PER_SOURCE } from "../src/improve/improve";
+import { ensureActiveConfig, improveSource, improveLowQuality, improveUntil, saveRawDocument, RAW_DOCS_PER_SOURCE } from "../src/improve/improve";
 import type { ClaudeClient, ToolSpec } from "../src/claude";
 
 const NOW = new Date("2026-11-03T18:00:00Z");
@@ -300,5 +300,55 @@ describe("improveLowQuality", () => {
   it("Claude がなければ何もしない", async () => {
     const out = await improveLowQuality(env.DB, [], { claude: null, now: () => NOW });
     expect(out).toEqual([]);
+  });
+});
+
+describe("improveUntil（目標スコアを超えるまで改善を繰り返す）", () => {
+  async function seed(type = "html") {
+    const id = await addSource(type);
+    await saveRawDocument(env.DB, { sourceId: id, runId: null, url: PAGE_URL, contentType: "text/html", body: page, fetchedAt: NOW });
+    return id;
+  }
+  const deps = (claude: ClaudeClient) => ({ claude, now: () => NOW });
+
+  it("目標を超えたら止める", async () => {
+    const id = await seed();
+    const out = await improveUntil(env.DB, id, deps(fakeClaude().claude), { target: 0, maxRounds: 5, maxMisses: 2 });
+    expect(out.stop).toBe("reached");
+    expect(out.rounds).toHaveLength(1);
+    expect(out.score).toBeCloseTo(out.rounds[0]!.candidate!.score, 3);
+  });
+
+  it("採用されない回が続いたら止める", async () => {
+    const id = await seed();
+    const out = await improveUntil(env.DB, id, deps(fakeClaude({ improved: POOR }).claude), { target: 1.01, maxRounds: 10, maxMisses: 2 });
+    expect(out.stop).toBe("stalled");
+    expect(out.rounds.map((r) => r.decision)).toEqual(["rejected", "rejected"]);
+    expect(out.score).toBeCloseTo(out.rounds[1]!.baseline!.score, 3);
+  });
+
+  it("採用が続いても上限回数で止める", async () => {
+    const id = await seed();
+    const out = await improveUntil(env.DB, id, deps(fakeClaude().claude), { target: 1.01, maxRounds: 2, maxMisses: 5 });
+    expect(out.stop).toBe("max-rounds");
+    expect(out.rounds).toHaveLength(2);
+    expect(out.rounds[0]!.decision).toBe("adopted");
+  });
+
+  it("改善できない（生データがない）ときはすぐ止める", async () => {
+    const id = await addSource();
+    const out = await improveUntil(env.DB, id, deps(fakeClaude().claude), { target: 0.95, maxRounds: 5, maxMisses: 2 });
+    expect(out.stop).toBe("skipped");
+    expect(out.rounds.map((r) => r.decision)).toEqual(["skipped"]);
+    expect(out.score).toBeNull();
+  });
+
+  it("Claude で抽出しない種別（ical など）は回さない", async () => {
+    const id = await seed("ical");
+    const { claude } = fakeClaude();
+    const out = await improveUntil(env.DB, id, deps(claude), { target: 0.95, maxRounds: 5, maxMisses: 2 });
+    expect(out.stop).toBe("not-improvable");
+    expect(out.rounds).toEqual([]);
+    expect(claude.callTool).not.toHaveBeenCalled();
   });
 });

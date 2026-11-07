@@ -27,6 +27,7 @@ cd packages/db && pnpm generate           # スキーマ変更から migration �
 - 認証情報はチャット・ログに出さない。ログインはオーナーが手元のターミナルで `! wrangler login` を実行する
 - 開発は worktree で行う: `git worktree add ../kids-event-hub-issue-<番号> -b issue-<番号> origin/main`（1 issue = 1 worktree。クラウドの使い捨てセッションでは clone 自体が隔離環境なのでブランチを切るだけでよい）
 - PR 本文に変更点・テスト結果・迷った点・オーナー作業を書く。CI がグリーンなら Claude がマージしてよい（merge commit。オーナー了承済み）。ただし issue の要件を変える・緩める変更、本番データや運用ルールに影響する変更はマージせずオーナーに確認する
+- `/add-source` は例外で、オーナーに質問せず最後まで Claude が進める（オーナー了承済み）。収集元を追加する PR は CI がグリーンならマージし、本番 D1 への同期（`pnpm sync-sources` の remote 指定）、本番での初回クロール（`pnpm crawl-prod --url <URL>`）、抽出設定の改善（`pnpm improve-prod --url <URL>`）まで実行する
 - 下記「やらないこと」の一部は `.claude/hooks/guard-bash.mjs` が機械的に止める（`wrangler deploy` / `login` / `secret put` / リソース作成 / `--remote`、`main` への push）。止められたら回避せず、PR 本文の「オーナー作業」に書く
 
 ## 進め方
