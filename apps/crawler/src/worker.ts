@@ -1,6 +1,7 @@
 import { writeHealthReport } from "@kids-event-hub/db";
 import { createClaudeClient } from "./claude";
 import { runCrawlJob } from "./crawl/job";
+import { HEALTH_CRON } from "./schedule";
 
 export type CrawlerEnv = {
   DB: D1Database;
@@ -8,8 +9,6 @@ export type CrawlerEnv = {
   ANTHROPIC_API_KEY?: string;
   CLAUDE_MODEL?: string;
 };
-
-export const HEALTH_CRON = "30 21 * * *";
 
 /** Cron Trigger でクロールする Worker。03:00 JST に全収集元、12:00 JST は最後の成功から 20 時間以上あいた収集元（直前に失敗したもの・未取得のもの）の取り直し（対象は crawlAll が選ぶ）。06:30 JST はクロールせず日次の健全性を集計する */
 export default {
