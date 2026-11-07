@@ -26,7 +26,7 @@
 
 | コマンド | 内容 |
 | --- | --- |
-| `/add-source <URL>` | robots.txt・規約を確認して `sources.yaml` に追加 → ローカル D1 に同期 → 初回クロール |
+| `/add-source <URL>` | robots.txt・規約を確認して `sources.yaml` に追加 → ローカル D1 に同期 → 初回クロール → 品質が低ければ `/improve` → PR。途中でオーナーに質問せず、迷った点は PR に書く |
 | `/crawl <source>` | 収集元を 1 件ローカルでクロールし、件数・日付取得数・品質スコア・失敗理由を報告 |
 | `/improve <source>` | Improver → Verifier → 自動採用 / **人間の承認** / 却下 → `docs/improvement-log.md` に記録 |
 | `/review-pr <PR>` | Reviewer サブエージェントにレビューさせ、人間がマージを判断できる形にまとめる |
