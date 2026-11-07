@@ -282,3 +282,31 @@ export async function improveLowQuality(
   }
   return out;
 }
+
+export type ImproveUntilOptions = { target: number; maxRounds: number; maxMisses: number };
+export type ImproveUntilResult = {
+  sourceId: number;
+  stop: "reached" | "stalled" | "max-rounds" | "skipped" | "not-improvable";
+  score: number | null;
+  rounds: ImproveResult[];
+};
+
+export async function improveUntil(db: D1Database, sourceId: number, deps: ImproveDeps, opts: ImproveUntilOptions): Promise<ImproveUntilResult> {
+  const rounds: ImproveResult[] = [];
+  const done = (stop: ImproveUntilResult["stop"], score: number | null): ImproveUntilResult => ({ sourceId, stop, score, rounds });
+  const source = await db.prepare("SELECT type FROM sources WHERE id = ?").bind(sourceId).first<{ type: string | null }>();
+  if (!source?.type || !IMPROVABLE_TYPES.has(source.type)) return done("not-improvable", null);
+
+  let score: number | null = null;
+  let misses = 0;
+  while (rounds.length < opts.maxRounds) {
+    const r = await improveSource(db, sourceId, deps);
+    rounds.push(r);
+    if (r.decision === "skipped") return done("skipped", r.baseline?.score ?? score);
+    score = r.decision === "adopted" ? r.candidate!.score : r.baseline!.score;
+    if (score > opts.target) return done("reached", score);
+    misses = r.decision === "adopted" ? 0 : misses + 1;
+    if (misses >= opts.maxMisses) return done("stalled", score);
+  }
+  return done("max-rounds", score);
+}

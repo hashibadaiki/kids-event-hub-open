@@ -9,7 +9,8 @@
     "check-policy": "tsx bin/check-policy.ts",
     "dev": "wrangler dev --test-scheduled --persist-to ../web/.wrangler/state",
     "try-extract": "tsx bin/try-extract.ts",
-    "crawl-prod": "tsx bin/crawl-prod.ts"
+    "crawl-prod": "tsx bin/crawl-prod.ts",
+    "improve-prod": "tsx bin/improve-prod.ts"
   },
   "dependencies": {
     "@kids-event-hub/core": "workspace:*",

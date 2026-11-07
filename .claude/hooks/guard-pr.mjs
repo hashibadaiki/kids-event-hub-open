@@ -15,7 +15,7 @@ const MERGE_CHECKLIST = [
   "1. CI（typecheck → lint → test）がグリーンか",
   "2. issue の要件（ゴール）を変えたり緩めたりしていないか（PR 本文の「判断に迷った点」「未対応」）",
   "3. Reviewer サブエージェント（/review-pr）の指摘が解消されているか",
-  "4. 運用ルール（CLAUDE.md・.claude/ の変更）や本番データに影響しないか。migration・デプロイなど「オーナー作業」は PR 本文に書いてあるか",
+  "4. 運用ルール（CLAUDE.md・.claude/ の変更）や本番データに影響しないか。migration・デプロイなど「オーナー作業」は PR 本文に書いてあるか。ただし /add-source の PR（sources.yaml に収集元を足すだけ）は 4 に当たらない",
 ].join("\n");
 
 /** 本文をファイルから読む指定（gh pr create --body-file / -F <path>、gh api -F body=@<path>）の中身 */
