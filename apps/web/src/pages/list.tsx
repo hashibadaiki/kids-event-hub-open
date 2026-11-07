@@ -74,8 +74,7 @@ export function ListPage(props: { url: string; query: SearchQuery; today: string
                 </a>
                 <div>{formatWhen(e)}</div>
                 <div class="muted">
-                  {[e.city, e.venue].filter(Boolean).join(" ")}
-                  {[formatAge(e), formatPrice(e)].filter(Boolean).map((s) => ` / ${s}`)}
+                  {[[e.city, e.venue].filter(Boolean).join(" "), formatAge(e), formatPrice(e)].filter(Boolean).join(" / ")}
                 </div>
               </li>
             ))}
