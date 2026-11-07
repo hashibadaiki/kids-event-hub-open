@@ -45,6 +45,30 @@ describe("都道府県一覧 /", () => {
     expect(html).toContain('href="/tokushima"');
     expect(html).not.toContain("愛媛県");
   });
+
+  it("MCP エンドポイントと Claude への登録方法を出す", async () => {
+    const html = await (await app.request("https://hub.example/")).text();
+    expect(html).toContain("<code>https://hub.example/mcp</code>");
+    expect(html).toContain('data-copy="https://hub.example/mcp"');
+    expect(html).toContain('href="https://claude.ai/settings/connectors"');
+    const command = "claude mcp add --transport http kids-event-hub https://hub.example/mcp";
+    expect(html).toContain(`<code>${command}</code>`);
+    expect(html).toContain(`data-copy="${command}"`);
+  });
+
+  it("コピーボタンを動かすスクリプトを出す", async () => {
+    const html = await (await get("/")).text();
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    expect(script).toContain("navigator.clipboard.writeText");
+    expect(script).toContain("data-copy");
+  });
+});
+
+describe("フッター", () => {
+  it.each(["/", "/kagawa", "/events/1"])("%s に GitHub リポジトリへのリンクを出す", async (path) => {
+    const html = await (await get(path)).text();
+    expect(html).toMatch(/<footer[\s\S]*href="https:\/\/github\.com\/hashibadaiki\/kids-event-hub-open"[\s\S]*<\/footer>/);
+  });
 });
 
 describe("一覧 /:pref, /:pref/:date", () => {
