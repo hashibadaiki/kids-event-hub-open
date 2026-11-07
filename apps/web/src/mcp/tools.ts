@@ -1,6 +1,6 @@
-import type { DashboardOptions, DashboardStats } from "@kids-event-hub/db";
+import type { DashboardOptions, DashboardStats, HealthReport } from "@kids-event-hub/db";
 import type { EventRecord, EventRepository } from "../repository";
-import { MAX_KEYWORD_LENGTH, parseSearch, todayJst, type SearchQuery } from "../search";
+import { isValidDate, MAX_KEYWORD_LENGTH, parseSearch, todayJst, type SearchQuery } from "../search";
 import { PREFECTURES, type Prefecture } from "../prefectures";
 import { formatAge, formatPrice, formatWhen, isPdfUrl } from "../format";
 
@@ -171,6 +171,38 @@ export const MCP_TOOLS: McpTool[] = [
     },
     annotations: READ_ONLY,
   },
+  {
+    name: "get_health",
+    title: "クロールの日次の健全性",
+    description:
+      "その日（JST。毎朝 06:30 に直近 26 時間の各収集元の最後の実行で集計）のクロールの要約と、異常のある収集元だけを返す（GET /api/health と同じ内容）。" +
+      "status は ok（異常なし）/ anomaly（異常あり）/ missing（その日の集計がない。Cron か Worker が止まっている可能性）。" +
+      "異常の種類: no_run（直近に実行されなかった）、failed（thresholds.failedDays 日以上続けて失敗。consecutiveFailedDays は連続日数）、" +
+      "zero_events（前回まで取れていたのに 0 件）、event_count_drop（件数が過去の平均の thresholds.countDropRatio 倍未満）、" +
+      "date_rate_drop（日付取得率が過去の平均から thresholds.rateDrop 以上低下）。新しい PDF がなかった実行は件数・率を判定しない。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string", pattern: DATE_PATTERN, description: "対象日（JST、YYYY-MM-DD）。省略時は今日" },
+      },
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        generatedAt: { type: "string" },
+        today: { type: "string" },
+        date: { type: "string" },
+        status: { type: "string", enum: ["ok", "anomaly", "missing"] },
+        report: { type: ["object", "null"] },
+        anomalies: { type: "array", items: { type: "object" } },
+        anomaliesTruncated: { type: "boolean" },
+        thresholds: { type: "object" },
+      },
+      required: ["generatedAt", "today", "date", "status", "report", "anomalies", "anomaliesTruncated", "thresholds"],
+    },
+    annotations: READ_ONLY,
+  },
 ];
 
 export type ToolContext = {
@@ -179,6 +211,7 @@ export type ToolContext = {
   /** 詳細ページの URL を作るためのオリジン（例: https://kids-event-hub.example） */
   origin: string;
   dashboard?: (options: DashboardOptions) => Promise<DashboardStats>;
+  health?: (date: string) => Promise<HealthReport>;
 };
 
 export type ToolResult =
@@ -316,10 +349,21 @@ async function getDashboard(args: Record<string, unknown>, ctx: ToolContext): Pr
   return ok({ generatedAt: ctx.now.toISOString(), ...stats });
 }
 
+async function getHealth(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  checkArgs(args, ["date"]);
+  const today = todayJst(ctx.now);
+  const date = optionalString(args, "date") ?? today;
+  if (!isValidDate(date)) throw new ToolInputError("date: 実在する日付を YYYY-MM-DD で指定してください");
+  if (!ctx.health) return fail("このサーバーでは健全性の集計を返せません");
+  const report = await ctx.health(date);
+  return ok({ generatedAt: ctx.now.toISOString(), today, ...report });
+}
+
 const HANDLERS: Record<string, (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolResult>> = {
   search_events: searchEvents,
   get_event: getEvent,
   get_dashboard: getDashboard,
+  get_health: getHealth,
 };
 
 export const hasTool = (name: string) => Object.hasOwn(HANDLERS, name);

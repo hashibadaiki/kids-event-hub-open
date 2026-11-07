@@ -126,9 +126,11 @@ export const crawlRuns = sqliteTable(
     upsertedCount: integer("upserted_count").notNull().default(0), // events に入れた / 更新した数
     qualityScore: real("quality_score"), // 抽出品質（0〜1）。採点できなかった（取得失敗など）は null
     errorMessage: text("error_message"),
+    nothingNew: integer("nothing_new", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [
     index("crawl_runs_source_started_idx").on(t.sourceId, t.startedAt),
+    index("crawl_runs_started_idx").on(t.startedAt),
     index("crawl_runs_config_idx").on(t.configId),
     check("crawl_runs_status_check", oneOf("status", RUN_STATUSES)),
   ],
@@ -254,5 +256,48 @@ export const configEvaluations = sqliteTable(
   (t) => [
     index("config_evaluations_source_created_idx").on(t.sourceId, t.createdAt),
     check("config_evaluations_decision_check", oneOf("decision", EVALUATION_DECISIONS)),
+  ],
+);
+
+export const HEALTH_ANOMALY_KINDS = ["no_run", "failed", "zero_events", "event_count_drop", "date_rate_drop"] as const;
+export type HealthAnomalyKind = (typeof HEALTH_ANOMALY_KINDS)[number];
+
+export const healthReports = sqliteTable("health_reports", {
+  date: text("date").primaryKey(),
+  generatedAt: text("generated_at").notNull(),
+  targetSources: integer("target_sources").notNull(),
+  ranSources: integer("ran_sources").notNull(),
+  successCount: integer("success_count").notNull(),
+  partialCount: integer("partial_count").notNull(),
+  failedCount: integer("failed_count").notNull(),
+  noRunCount: integer("no_run_count").notNull(),
+  anomalyCount: integer("anomaly_count").notNull(),
+  extractedCount: integer("extracted_count").notNull(),
+  dateFoundCount: integer("date_found_count").notNull(),
+});
+
+export const sourceHealth = sqliteTable(
+  "source_health",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    date: text("date").notNull(),
+    sourceId: integer("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    runId: integer("run_id"),
+    status: text("status", { enum: RUN_STATUSES }),
+    nothingNew: integer("nothing_new", { mode: "boolean" }).notNull().default(false),
+    extractedCount: integer("extracted_count").notNull().default(0),
+    dateFoundCount: integer("date_found_count").notNull().default(0),
+    dateRate: real("date_rate"),
+    baselineExtractedCount: real("baseline_extracted_count"),
+    baselineDateRate: real("baseline_date_rate"),
+    consecutiveFailedDays: integer("consecutive_failed_days").notNull().default(0),
+    anomalies: text("anomalies", { mode: "json" }).$type<HealthAnomalyKind[]>(),
+    errorMessage: text("error_message"),
+  },
+  (t) => [
+    uniqueIndex("source_health_date_source_unique").on(t.date, t.sourceId),
+    index("source_health_source_date_idx").on(t.sourceId, t.date),
   ],
 );

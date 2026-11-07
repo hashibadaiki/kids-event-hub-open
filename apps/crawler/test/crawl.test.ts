@@ -481,7 +481,8 @@ describe("crawlSource（PDF の一覧ページ）: 抽出済みの PDF は読み
     expect(fetchedPdfs(d)).toEqual([]);
     expect(claude.callTool).toHaveBeenCalledTimes(1);
     expect(r).toMatchObject({ status: "success", extracted: 0, quality: null, error: null });
-    expect((await runs())[1]).toMatchObject({ status: "success", quality_score: null });
+    expect((await runs())[1]).toMatchObject({ status: "success", quality_score: null, nothing_new: 1 });
+    expect((await runs())[0]).toMatchObject({ nothing_new: 0 });
   });
 
   it("1 回に処理する新しい PDF は 5 件まで。残りは次回に回す", async () => {

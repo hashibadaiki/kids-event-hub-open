@@ -295,7 +295,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
   await db
     .prepare(
       `UPDATE crawl_runs SET status = ?, finished_at = ?, duration_ms = ?, fetched_count = ?, extracted_count = ?,
-         date_found_count = ?, upserted_count = ?, quality_score = ?, error_message = ? WHERE id = ?`,
+         date_found_count = ?, upserted_count = ?, quality_score = ?, error_message = ?, nothing_new = ? WHERE id = ?`,
     )
     .bind(
       result.status,
@@ -307,6 +307,7 @@ export async function crawlSource(db: D1Database, source: SourceRow, deps: Crawl
       result.upserted,
       result.quality?.score ?? null,
       result.error,
+      result.status !== "failed" && progress.nothingNew ? 1 : 0,
       runId,
     )
     .run();
