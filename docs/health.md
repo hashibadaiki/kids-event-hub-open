@@ -3,7 +3,31 @@
 毎朝、前夜のクロールでエラーが出ていないか、品質が落ちていないかを定期ルーティンで確かめるための集計。
 全国規模（収集元が数千）でも読む側の負担が増えないよう、集計と異常の判定はサーバー側で済ませる。
 
-## 流れ
+## 全体の流れ
+
+```mermaid
+flowchart TB
+  subgraph CHECK["毎日の品質チェック（自動・時刻は JST）"]
+    direction LR
+    C["03:00 クロール"] --> H["06:30 集計<br/>過去 7 日の平均と比べる"]
+    H --> API["/api/health<br/>get_health"]
+    API --> RT["07:00 ルーティン<br/>（Claude）"]
+    RT --> I["issue<br/>health-alert"]
+  end
+  subgraph FIX["修正（人が着手を決める）"]
+    direction LR
+    O(["人が ready を付ける"]) --> DEV["開発ループ<br/>（Claude）"]
+    DEV --> PR["修正 PR"]
+    PR --> CI{{"CI"}}
+    CI --> M["マージ<br/>次のクロールから反映"]
+  end
+  CHECK -- "異常があったとき" --> FIX
+```
+
+- 毎朝のルーティンは読むことと issue を立てることだけを行い、コードの変更・PR・デプロイはしない。同じ日の `health-alert` の issue がすでにあれば立てない
+- 修正に着手するかは人が決める（issue に `ready` を付ける）。そこから先は通常の開発ループ（README「Claude Code をソフトウェアファクトリーとして回す」）で、CI がグリーンなら Claude がマージする
+
+## 流れ（集計の詳細）
 
 1. crawler の Worker の 06:30 JST の Cron（`HEALTH_CRON`）が、クロールとは別に `writeHealthReport` を呼ぶ
    - クロールのジョブの最後で書かないのは、収集元が増えてジョブが打ち切られたときに集計まで届かず、毎日 `missing` と誤報になるため
