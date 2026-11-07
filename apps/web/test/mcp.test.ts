@@ -130,7 +130,7 @@ describe("MCP: プロトコル（Streamable HTTP、JSON 応答のみ・ステー
 describe("MCP: ツール定義", () => {
   it("検索 2 つと運用の集計 1 つだけを出す（書き込み系はない）", async () => {
     const json = (await (await rpc("tools/list")).json()) as { result: { tools: { name: string }[] } };
-    expect(json.result.tools.map((t) => t.name)).toEqual(["search_events", "get_event", "get_dashboard"]);
+    expect(json.result.tools.map((t) => t.name)).toEqual(["search_events", "get_event", "get_dashboard", "get_health"]);
     expect(json.result.tools).toEqual(MCP_TOOLS);
   });
 

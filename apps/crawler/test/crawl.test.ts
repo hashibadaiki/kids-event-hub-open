@@ -970,4 +970,19 @@ describe("runCrawlJob", () => {
     expect(results.map((r) => r.status)).toEqual(["success"]);
     expect(improved).toEqual([]);
   });
+
+  it("最後にその日（JST）の日次サマリーを書く", async () => {
+    await env.DB.prepare("DELETE FROM health_reports").run();
+    await addSource("https://example.jp/cal.ics", "ical");
+    await addSource("https://example.jp/down.ics", "ical");
+    const routes = {
+      "https://example.jp/cal.ics": new Response(ics, { headers: { "content-type": "text/calendar" } }),
+      "https://example.jp/down.ics": new Response("", { status: 503 }),
+    };
+    await runCrawlJob(env.DB, deps(routes), { force: true });
+    const report = await env.DB.prepare("SELECT * FROM health_reports").all();
+    expect(report.results).toEqual([
+      expect.objectContaining({ date: "2026-11-04", target_sources: 2, success_count: 1, failed_count: 1, anomaly_count: 1 }),
+    ]);
+  });
 });

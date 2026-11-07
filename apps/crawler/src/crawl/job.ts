@@ -1,3 +1,4 @@
+import { writeHealthReport } from "@kids-event-hub/db";
 import { improveLowQuality, type ImproveResult } from "../improve/improve";
 import { crawlAll, type CrawlAllOptions, type CrawlDeps, type CrawlResult } from "./run";
 
@@ -16,5 +17,6 @@ export async function runCrawlJob(
   const results = await crawlAll(db, deps, { ...options, onResult: hooks.onResult });
   const improved = await improveLowQuality(db, results, { claude: deps.claude, now: deps.now });
   for (const r of improved) await hooks.onImprove?.(r);
+  await writeHealthReport(db, deps.now());
   return { results, improved };
 }

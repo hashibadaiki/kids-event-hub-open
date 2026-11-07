@@ -1,8 +1,8 @@
 import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { dashboardStats } from "@kids-event-hub/db";
+import { dashboardStats, healthReport } from "@kids-event-hub/db";
 import type { EventRepository } from "./repository";
-import { parseSearch, todayJst } from "./search";
+import { isValidDate, parseSearch, todayJst } from "./search";
 import { prefectureByName, PREFECTURES } from "./prefectures";
 import { HomePage } from "./pages/home";
 import { ListPage } from "./pages/list";
@@ -42,6 +42,17 @@ export function createApp({ repository, now = () => new Date() }: AppOptions) {
     });
   });
 
+  app.get("/api/health", async (c) => {
+    const today = todayJst(now());
+    const date = new URL(c.req.url).searchParams.get("date") ?? today;
+    if (!isValidDate(date)) return c.text("Bad Request: date は YYYY-MM-DD の実在する日付", 400);
+    const report = await healthReport(drizzle(c.env.DB), date);
+    return c.json({ generatedAt: now().toISOString(), today, ...report }, 200, {
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "public, max-age=300",
+    });
+  });
+
   // MCP サーバー（Streamable HTTP、読み取りのツールのみ）
   app.post("/mcp", async (c) => {
     const res = await handleMcp(await c.req.text(), {
@@ -49,6 +60,7 @@ export function createApp({ repository, now = () => new Date() }: AppOptions) {
       now: now(),
       origin: new URL(c.req.url).origin,
       dashboard: (options) => dashboardStats(drizzle(c.env.DB), options),
+      health: (date) => healthReport(drizzle(c.env.DB), date),
     });
     if (res.body === undefined) return c.body(null, res.status as 202);
     return c.json(res.body, res.status as 200 | 400);
