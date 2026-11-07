@@ -177,6 +177,49 @@ describe("詳細 /events/:id", () => {
     expect(html).toContain('href="/kagawa/2026-11-08"');
   });
 
+  it("上部の「一覧に戻る」は前のページがなければ県・開催日の一覧へ移動する", async () => {
+    const html = await (await get("/events/1")).text();
+    const back = html.match(/<a[^>]*class="back"[^>]*>([^<]*)<\/a>/);
+    expect(back?.[0]).toContain('href="/kagawa/2026-11-08"');
+    expect(back?.[1]).toContain("一覧に戻る");
+    expect(html.indexOf('class="back"')).toBeLessThan(html.indexOf("<h1>"));
+  });
+
+  it("自サイトの一覧から来たときだけ履歴を戻るスクリプトを出す", async () => {
+    const html = await (await get("/events/1")).text();
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    expect(script).toContain("history.back()");
+    expect(script).toContain("document.referrer");
+    expect(script).toContain("location.origin");
+    expect(script).toContain("/events/");
+  });
+
+  it("県が分からないイベントの「一覧に戻る」はトップへ", async () => {
+    const app = createApp({
+      repository: () => createMemoryRepository([ev({ id: 7, prefecture: "不明" })]),
+      now,
+    });
+    const html = await (await app.request("/events/7")).text();
+    expect(html).toMatch(/<a[^>]*class="back"[^>]*href="\/"|<a[^>]*href="\/"[^>]*class="back"/);
+  });
+
+  it("施設のイベント一覧へのリンク", async () => {
+    const html = await (await get("/events/1")).text();
+    expect(html).toContain(`href="/kagawa?q=${encodeURIComponent("中央図書館")}"`);
+    expect(html).toContain("この施設のイベント一覧へ");
+  });
+
+  it("会場が不明・検索語の上限より長いなら施設のリンクは出さない", async () => {
+    const app = createApp({
+      repository: () => createMemoryRepository([ev({ id: 8, venue: null }), ev({ id: 9, venue: "館".repeat(101) })]),
+      now,
+    });
+    for (const id of [8, 9]) {
+      const html = await (await app.request(`/events/${id}`)).text();
+      expect(html).not.toContain("この施設のイベント一覧へ");
+    }
+  });
+
   it("存在しない ID は 404", async () => {
     expect((await get("/events/999")).status).toBe(404);
     expect((await get("/events/abc")).status).toBe(404);
