@@ -179,7 +179,8 @@ export const MCP_TOOLS: McpTool[] = [
       "status は ok（異常なし）/ anomaly（異常あり）/ missing（その日の集計がない。Cron か Worker が止まっている可能性）。" +
       "異常の種類: no_run（直近に実行されなかった）、failed（thresholds.failedDays 日以上続けて失敗。consecutiveFailedDays は連続日数）、" +
       "zero_events（前回まで取れていたのに 0 件）、event_count_drop（件数が過去の平均の thresholds.countDropRatio 倍未満）、" +
-      "date_rate_drop（日付取得率が過去の平均から thresholds.rateDrop 以上低下）。新しい PDF がなかった実行は件数・率を判定しない。",
+      "date_rate_drop（日付取得率が過去の平均から thresholds.rateDrop 以上低下）、quality_drop（品質スコアが過去の平均から thresholds.qualityDrop 以上低下）。" +
+      "新しい PDF がなかった実行は件数・率・品質を判定しない。",
     inputSchema: {
       type: "object",
       properties: {
