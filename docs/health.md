@@ -6,20 +6,23 @@
 ## 全体の流れ
 
 ```mermaid
-flowchart LR
-  C["03:00 JST クロール<br/>失敗分は 12:00 に取り直し"] --> R[("crawl_runs<br/>件数・日付取得率・品質スコア")]
-  R --> H["06:30 JST 健全性の集計<br/>直近 26 時間の最後の実行を<br/>過去 7 日の平均と比べる"]
-  H --> DB[("health_reports<br/>source_health")]
-  DB --> API["GET /api/health<br/>MCP get_health<br/>要約と異常のある収集元だけ"]
-  API --> RT["07:00 JST 定期ルーティン（Claude）<br/>異常を読み、原因の見立てを書く"]
-  RT -- "ok" --> END["issue は立てない"]
-  RT -- "anomaly / missing / API に届かない" --> I["issue（health-alert）<br/>異常の表・見立て・次の一手"]
-  I --> O(["人のチェック<br/>直すと決めたら ready を付ける"])
-  O --> DEV["開発ループ（Claude）<br/>planner → implementer<br/>抽出設定なら /improve"]
-  DEV --> PR["修正 PR"]
-  PR --> CI{{"CI<br/>typecheck → lint → test"}}
-  CI --> M["マージ"]
-  M -. "次のクロールから反映" .-> C
+flowchart TB
+  subgraph CHECK["毎日の品質チェック（自動・時刻は JST）"]
+    direction LR
+    C["03:00 クロール"] --> H["06:30 集計<br/>過去 7 日の平均と比べる"]
+    H --> API["/api/health<br/>get_health"]
+    API --> RT["07:00 ルーティン<br/>（Claude）"]
+    RT --> I["issue<br/>health-alert"]
+  end
+  subgraph FIX["修正（人が着手を決める）"]
+    direction LR
+    O(["人が ready を付ける"]) --> DEV["開発ループ<br/>（Claude）"]
+    DEV --> PR["修正 PR"]
+    PR --> CI{{"CI"}}
+    CI --> M["マージ"]
+  end
+  CHECK -- "異常があったとき" --> FIX
+  FIX -. "次のクロールから反映" .-> CHECK
 ```
 
 - 毎朝のルーティンは読むことと issue を立てることだけを行い、コードの変更・PR・デプロイはしない。同じ日の `health-alert` の issue がすでにあれば立てない
