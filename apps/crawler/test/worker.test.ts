@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { env } from "cloudflare:workers";
 import cronConfig from "../wrangler.jsonc?raw";
-import worker, { HEALTH_CRON } from "../src/worker";
+import * as workerModule from "../src/worker";
+import { HEALTH_CRON } from "../src/schedule";
+
+const worker = workerModule.default;
 
 beforeEach(async () => {
   for (const t of ["source_health", "health_reports", "crawl_runs", "sources"]) await env.DB.prepare(`DELETE FROM ${t}`).run();
@@ -13,6 +16,12 @@ async function fire(cron: string, scheduledTime: Date) {
   await worker.scheduled({ cron, scheduledTime: scheduledTime.getTime(), noRetry: () => {} } as ScheduledController, { DB: env.DB }, ctx as unknown as ExecutionContext);
   await Promise.all(pending);
 }
+
+describe("エントリーモジュール", () => {
+  it("値の export は default だけ（workerd は名前付き export をエントリーポイントとして扱う）", () => {
+    expect(Object.keys(workerModule)).toEqual(["default"]);
+  });
+});
 
 describe("scheduled", () => {
   it("健全性の Cron が wrangler.jsonc の Cron Trigger に入っている", () => {

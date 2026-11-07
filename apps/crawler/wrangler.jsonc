@@ -5,7 +5,7 @@
   "compatibility_date": "2026-08-01",
   // 03:00 JST（UTC 18:00）に全収集元、12:00 JST（UTC 03:00）は直前に失敗した収集元の取り直し。
   // どちらも crawlAll が対象を選ぶ: 最後に成功した取得から 20 時間、直前の取得から 6 時間たっていない収集元はスキップする
-  // 06:30 JST（UTC 21:30）はクロールせず日次の健全性を集計する（src/worker.ts の HEALTH_CRON と同じ値にする）
+  // 06:30 JST（UTC 21:30）はクロールせず日次の健全性を集計する（src/schedule.ts の HEALTH_CRON と同じ値にする）
   "triggers": { "crons": ["0 18 * * *", "0 3 * * *", "30 21 * * *"] },
   "d1_databases": [
     {
