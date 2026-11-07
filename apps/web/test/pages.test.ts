@@ -257,6 +257,20 @@ describe("詳細 /events/:id", () => {
   });
 });
 
+const luminance = (hex: string) => {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? [...h].map((c) => c + c).join("") : h;
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(full.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrast = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
 describe("見た目", () => {
   const style = async (path: string) => {
     const html = await (await get(path)).text();
@@ -280,6 +294,18 @@ describe("見た目", () => {
     expect(css).toContain("-webkit-tap-highlight-color:transparent");
     expect(css).toMatch(/touch-action:manipulation/);
     expect(css).toMatch(/:active\{/);
+  });
+
+  it("枠線は白地とカードの地の両方で 3:1 以上", async () => {
+    const css = await style("/");
+    const token = (name: string) => css.match(new RegExp(`--${name}:(#[0-9a-f]{3,6})[;}]`))?.[1] ?? "";
+    expect(contrast(token("line"), token("bg"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(token("line"), token("card"))).toBeGreaterThanOrEqual(3);
+  });
+
+  it("押している間はカード類の地を変えず、枠の色で示す", async () => {
+    const css = await style("/");
+    expect(css).toMatch(/ul\.prefs a:active,ul\.events li:active,nav\.days a:active\{border-color:var\(--accent\)\}/);
   });
 
   it("長い英数字の見出し・詳細欄は折り返す", async () => {

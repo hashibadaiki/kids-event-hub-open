@@ -4,7 +4,7 @@ import { raw } from "hono/html";
 export const SITE_NAME = "こどもイベントさがし";
 
 const STYLE = `
-:root{color-scheme:light;--fg:#2d2a26;--muted:#6b6257;--bg:#fff;--card:#fff8ef;--line:#eadbc6;--accent:#c2410c;--accent-press:#9a3412}
+:root{color-scheme:light;--fg:#2d2a26;--muted:#6b6257;--bg:#fff;--card:#fff8ef;--line:#a38c6b;--accent:#c2410c;--accent-press:#9a3412}
 *{box-sizing:border-box}
 html{-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
 a,button{touch-action:manipulation}
@@ -43,7 +43,7 @@ div.copy{display:flex;gap:8px;align-items:center;padding:8px;border:1px solid va
 div.copy code{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.85rem}
 div.copy button{flex-shrink:0;font:inherit;font-size:.85rem;padding:6px 12px;min-height:44px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-weight:700;white-space:nowrap}
 form.filter button:active,a.source:active,div.copy button:active{background:var(--accent-press)}
-ul.prefs a:active,ul.events li:active,nav.days a:active{background:var(--line)}
+ul.prefs a:active,ul.events li:active,nav.days a:active{border-color:var(--accent)}
 `;
 
 export function Layout(props: {
