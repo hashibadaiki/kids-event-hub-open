@@ -1,7 +1,8 @@
 import { Layout } from "./layout";
+import { McpGuide } from "./mcp-guide";
 import type { Prefecture } from "../prefectures";
 
-export function HomePage(props: { url: string; prefectures: (Prefecture & { count: number })[] }) {
+export function HomePage(props: { url: string; mcpUrl: string; prefectures: (Prefecture & { count: number })[] }) {
   return (
     <Layout
       title="都道府県から探す"
@@ -22,6 +23,7 @@ export function HomePage(props: { url: string; prefectures: (Prefecture & { coun
           ))}
         </ul>
       )}
+      <McpGuide mcpUrl={props.mcpUrl} />
     </Layout>
   );
 }

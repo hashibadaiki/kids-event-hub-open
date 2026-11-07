@@ -63,7 +63,7 @@ export function createApp({ repository, now = () => new Date() }: AppOptions) {
       ...p,
       count: counts.get(p.name)!,
     }));
-    return c.html(DOCTYPE + (<HomePage url={c.req.url} prefectures={prefectures} />));
+    return c.html(DOCTYPE + (<HomePage url={c.req.url} mcpUrl={new URL("/mcp", c.req.url).href} prefectures={prefectures} />));
   });
 
   app.get("/events/:id", async (c) => {

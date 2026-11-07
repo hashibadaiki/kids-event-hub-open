@@ -32,6 +32,13 @@ a.back{display:inline-block;margin:12px 0 0;text-decoration:none}
 ul.more{padding-left:1.2em}
 a.source{display:block;text-align:center;padding:12px;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;text-decoration:none;margin:16px 0}
 footer{margin-top:24px;padding-bottom:24px}
+section.mcp{margin-top:32px;padding-top:8px;border-top:1px solid var(--line)}
+section.mcp h2{font-size:1.1rem}
+section.mcp h3{font-size:1rem;margin:16px 0 4px}
+section.mcp ol{padding-left:1.2em;margin:4px 0 8px}
+div.copy{display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+div.copy code{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.85rem}
+div.copy button{font:inherit;font-size:.85rem;padding:6px 12px;min-height:44px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-weight:700;white-space:nowrap}
 `;
 
 export function Layout(props: {
@@ -65,7 +72,10 @@ export function Layout(props: {
         </header>
         <main>{props.children}</main>
         <footer class="muted">
-          自治体・公共施設などの公開情報から自動で集めています。内容は必ず掲載元でご確認ください。
+          <p>自治体・公共施設などの公開情報から自動で集めています。内容は必ず掲載元でご確認ください。</p>
+          <p>
+            <a href="https://github.com/hashibadaiki/kids-event-hub-open">GitHub</a>
+          </p>
         </footer>
       </body>
     </html>
