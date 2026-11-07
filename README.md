@@ -7,19 +7,39 @@
 
 ## 課題
 
-（TODO）子供向けイベントの情報は自治体・公共施設ごとに散らばり、PDF チラシで公開されることも多く、横断して探しにくい。
+週末に子供を連れて行ける催しを探そうとすると、情報が次のように散らばっています。
+
+- **発信元がばらばら**: 市町村、図書館、児童館、公民館、商業施設がそれぞれのサイトに載せていて、横断して探せる場所がない
+- **PDF チラシでしか出ていない**: 自治体や公共施設は、広報紙や月間カレンダーを PDF で公開することが多い。検索エンジンでは日付や対象年齢で絞り込めない
+- **書き方がそろっていない**: 「11月7日(土)」「令和8年11月」「毎週水曜」、「3歳〜未就学児」「小学生以上」など、日付・年齢・料金の表記がページごとに違う
 
 ## 解決
 
-（TODO）PDF / HTML を Claude で構造化し、都道府県 × 日付で検索できるようにする。
+自治体・公共施設のページと PDF チラシを毎日自動で集め、Claude が読んでイベントの形（タイトル・日時・会場・対象年齢・料金・要約）にそろえます。都道府県 × 日付 × 年齢で、Web からも Claude からも探せます。
+
+- **PDF チラシをそのまま読む**: PDF を Claude API に渡し、1 枚に複数のイベントが載った広報や月間カレンダーも日ごとのイベントに分けます
+- **抽出の品質を自分で上げる**: クロールのたびに日付・会場・年齢の取得率を採点し、低い収集元は Claude が抽出設定の改善案を出します。保存済みのデータで新旧を比べ、はっきり良くなったときだけ自動で採用し、微妙なときは人が判断します
+- **Claude からも探せる**: 読み取り専用の MCP サーバーを公開しています。「今週末の香川の子供向けイベント教えて。5 歳です」と聞くと、Claude が検索して答えます
+- **配慮して集める**: robots.txt と利用規約を確認し、1 日 1 回程度、連絡先つきの User-Agent で取得します。本文は転載せず、Claude が書いた 100 文字以内の要約と掲載元へのリンクだけを載せます
 
 ## 公開 URL
 
-https://kids-event-hub.hashiba-baan-daiki.workers.dev （`/healthz` で死活確認）
+- 検索サイト: https://kids-event-hub.hashiba-baan-daiki.workers.dev （`/healthz` で死活確認）
+- MCP サーバー: https://kids-event-hub.hashiba-baan-daiki.workers.dev/mcp
 
 ## 使い方
 
-（TODO）検索サイト、MCP サーバーの使い方。
+**Web で探す**: 公開 URL を開き、都道府県を選びます。`/kagawa/2026-11-08` のように URL に日付を入れるとその日に開催中のイベント、`?age=5` で対象年齢で絞り込めます。ログインは不要です。URL の一覧は「[検索サイト](#検索サイト)」。
+
+**Claude から探す**: MCP サーバーを Claude に追加します。
+
+```sh
+claude mcp add --transport http kids-event-hub https://kids-event-hub.hashiba-baan-daiki.workers.dev/mcp
+```
+
+Claude Desktop / claude.ai では、設定 → コネクタ → 「カスタムコネクタを追加」に同じ URL を入れます。あとは「今週末の香川の子供向けイベント教えて」と聞きます。ツールの一覧は「[MCP サーバー](#mcp-サーバーclaude-から検索する)」。
+
+**収集元を増やす（開発者向け）**: Claude Code で `/add-source <URL>` を実行すると、robots.txt・利用規約の確認から本番での初回クロールと抽出設定の改善まで進みます。手順の詳細は以下の各節を見てください。
 
 ### 収集元の管理
 
@@ -174,11 +194,46 @@ pnpm exec wrangler deploy                          # クローラー（Cron Trig
 
 ## アーキテクチャ
 
-（TODO）Cloudflare Workers + D1、Hono、Drizzle、TypeScript。クローラー、正規化、Web / MCP の構成図。
+Cloudflare Workers + D1、Hono、Drizzle、TypeScript の pnpm モノレポです。
+
+```mermaid
+flowchart LR
+  Y["sources.yaml<br/>収集元"] -- "pnpm sync-sources" --> DB[("D1")]
+  subgraph CR["apps/crawler（Cron Worker）"]
+    F["取得<br/>robots.txt 確認・1 日 1 回"] --> X["抽出<br/>JSON-LD / iCal / RSS<br/>HTML・PDF は Claude API"]
+    X --> N["packages/core<br/>日付・年齢・料金・カテゴリの正規化<br/>重複判定"]
+    N --> Q["品質の採点<br/>低ければ Claude が改善案 → 新旧比較"]
+  end
+  DB --> F
+  Q --> DB
+  subgraph WEB["apps/web（Worker）"]
+    S["検索サイト（Hono SSR）"]
+    M["MCP サーバー<br/>search_events / get_event<br/>get_dashboard / get_health"]
+  end
+  DB --> S
+  DB --> M
+  U(["保護者"]) --> S
+  C(["Claude"]) --> M
+```
+
+| ディレクトリ | 役割 |
+| --- | --- |
+| `apps/crawler` | クロール（03:00 JST、失敗分は 12:00 JST に取り直し）、抽出、品質の採点と自動改善、日次の健全性集計（06:30 JST） |
+| `apps/web` | 検索サイト（SSR）、MCP サーバー、読み取り専用の API（`/api/dashboard`、`/api/health`） |
+| `packages/core` | 日付・価格・年齢・カテゴリの正規化、重複判定 |
+| `packages/db` | Drizzle のスキーマと migration、集計クエリ |
+| `.claude/` | Claude Code の skills・サブエージェント・フック |
 
 ## Claude 活用
 
-（TODO）PDF / HTML の構造化、抽出設定の自動改善、MCP サーバー、開発での Claude Code 活用。
+Claude はサービスの中と、サービスを作る・運用する側の両方で使っています。
+
+| どこで | 何をしているか |
+| --- | --- |
+| **PDF / HTML の構造化**（Claude API） | PDF チラシや HTML の本文からイベントの配列を構造化出力（JSON スキーマ）で受け取る。月や年が省略されたカレンダーは見出しと取得日から補う。説明文は 100 文字以内に要約する |
+| **抽出設定の自動改善**（Claude API） | 品質スコアが低い収集元について、取りこぼしたサンプルから抽出設定（指示・ヒント・CSS セレクタ）の改善案を出す。新しく取れた項目が子供向けかどうかも Claude が判定し、子供向けでないものが混ざれば人の確認に回す |
+| **MCP サーバー** | 作ったサービスを Claude から使えるようにする。検索のほか、運用ダッシュボードと毎朝の健全性チェックも MCP 経由で Claude が読む |
+| **開発と運用**（Claude Code） | issue から PR・レビュー・マージまでと、収集元の追加・クロール・改善を、skills・サブエージェント・フックで回す（下記） |
 
 ### Claude Code をソフトウェアファクトリーとして回す
 
