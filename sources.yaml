@@ -127,3 +127,12 @@ sources:
       status: caution
       checked_at: "2026-11-05"
       note: robots.txt は特定のボット（Exabot・AhrefsBot など）のみ Disallow で一般の UA は対象外。利用規約・著作権のページが見つからない。本文は転載せず要約と元 URL のみ
+  - name: おもちゃ王国（岡山） イベント・お知らせ
+    url: https://www.omochaoukoku.co.jp/event.php
+    prefecture: 岡山県
+    type: html
+    note: 玉野市の民間テーマパーク。イベントとお知らせが混在する一覧（約 30 件、個別ページ event.php?id=）。他県のおもちゃ王国は別サイト
+    policy:
+      status: caution
+      checked_at: "2026-11-07"
+      note: robots.txt なし（404）。利用規約・サイトポリシーのページが見つからない（プライバシーポリシーのみ）。本文は転載せず要約と元 URL のみ
