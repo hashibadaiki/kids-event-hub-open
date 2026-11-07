@@ -19,10 +19,9 @@ flowchart TB
     O(["人が ready を付ける"]) --> DEV["開発ループ<br/>（Claude）"]
     DEV --> PR["修正 PR"]
     PR --> CI{{"CI"}}
-    CI --> M["マージ"]
+    CI --> M["マージ<br/>次のクロールから反映"]
   end
   CHECK -- "異常があったとき" --> FIX
-  FIX -. "次のクロールから反映" .-> CHECK
 ```
 
 - 毎朝のルーティンは読むことと issue を立てることだけを行い、コードの変更・PR・デプロイはしない。同じ日の `health-alert` の issue がすでにあれば立てない
