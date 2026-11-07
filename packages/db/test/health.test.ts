@@ -20,6 +20,7 @@ const day = (date: string, over: Partial<HistoryDay> = {}): HistoryDay => ({
   nothingNew: false,
   extractedCount: 40,
   dateRate: 0.9,
+  qualityScore: 0.85,
   ...over,
 });
 const today = (over: Partial<DayResult> = {}): DayResult => ({
@@ -28,6 +29,7 @@ const today = (over: Partial<DayResult> = {}): DayResult => ({
   nothingNew: false,
   extractedCount: 40,
   dateFoundCount: 36,
+  qualityScore: 0.85,
   ...over,
 });
 const week = [day("2026-11-06"), day("2026-11-05"), day("2026-11-04")];
@@ -91,6 +93,16 @@ describe("judgeSource", () => {
   it(`比べる過去が ${HEALTH_THRESHOLDS.minBaselineDays} 日に満たなければ件数・率の低下は判定しない`, () => {
     const j = judgeSource(D, today({ extractedCount: 1, dateFoundCount: 0 }), week.slice(0, 2));
     expect(j).toMatchObject({ anomalies: [], baselineExtractedCount: null, baselineDateRate: null });
+  });
+
+  it(`品質スコアが過去の平均から ${HEALTH_THRESHOLDS.qualityDrop} 以上下がったら quality_drop`, () => {
+    expect(judgeSource(D, today({ qualityScore: 0.65 }), week)).toMatchObject({
+      anomalies: ["quality_drop"],
+      baselineQualityScore: expect.closeTo(0.85),
+    });
+    expect(judgeSource(D, today({ qualityScore: 0.75 }), week).anomalies).toEqual([]);
+    expect(judgeSource(D, today({ qualityScore: null }), week).anomalies).toEqual([]);
+    expect(judgeSource(D, today({ qualityScore: 0.1 }), week.slice(0, 2))).toMatchObject({ anomalies: [], baselineQualityScore: null });
   });
 
   it("failed の日は平均に入れない", () => {
@@ -182,6 +194,21 @@ describe("writeHealthReport / healthReport", () => {
     const r = await healthReport(db, "2026-11-07");
     expect(r.anomalies).toEqual([
       expect.objectContaining({ sourceName: "落ちた", anomalies: ["date_rate_drop"], dateRate: 0.5, baselineDateRate: expect.closeTo(0.9) }),
+    ]);
+  });
+
+  it("品質スコアの低下を検出し、当日のスコアと過去の平均を返す", async () => {
+    const s = await insertSource({ name: "会場が取れなくなった" });
+    for (const d of ["04", "05", "06"]) {
+      await insertRun(s.id, jst(`2026-11-${d}`, "03:00"), { qualityScore: 0.9 });
+      await writeHealthReport(env.DB, summaryAt(`2026-11-${d}`));
+    }
+    await insertRun(s.id, jst("2026-11-07", "03:00"), { qualityScore: 0.6 });
+    await writeHealthReport(env.DB, summaryAt("2026-11-07"));
+
+    const r = await healthReport(db, "2026-11-07");
+    expect(r.anomalies).toEqual([
+      expect.objectContaining({ anomalies: ["quality_drop"], qualityScore: 0.6, baselineQualityScore: expect.closeTo(0.9) }),
     ]);
   });
 

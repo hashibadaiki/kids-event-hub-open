@@ -259,7 +259,7 @@ export const configEvaluations = sqliteTable(
   ],
 );
 
-export const HEALTH_ANOMALY_KINDS = ["no_run", "failed", "zero_events", "event_count_drop", "date_rate_drop"] as const;
+export const HEALTH_ANOMALY_KINDS = ["no_run", "failed", "zero_events", "event_count_drop", "date_rate_drop", "quality_drop"] as const;
 export type HealthAnomalyKind = (typeof HEALTH_ANOMALY_KINDS)[number];
 
 export const healthReports = sqliteTable("health_reports", {
@@ -292,6 +292,8 @@ export const sourceHealth = sqliteTable(
     dateRate: real("date_rate"),
     baselineExtractedCount: real("baseline_extracted_count"),
     baselineDateRate: real("baseline_date_rate"),
+    qualityScore: real("quality_score"),
+    baselineQualityScore: real("baseline_quality_score"),
     consecutiveFailedDays: integer("consecutive_failed_days").notNull().default(0),
     anomalies: text("anomalies", { mode: "json" }).$type<HealthAnomalyKind[]>(),
     errorMessage: text("error_message"),

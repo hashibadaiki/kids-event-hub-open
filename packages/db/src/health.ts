@@ -10,6 +10,7 @@ export const HEALTH_THRESHOLDS = {
   failedDays: 2,
   countDropRatio: 0.5,
   rateDrop: 0.2,
+  qualityDrop: 0.15,
 } as const;
 
 export const DEFAULT_ANOMALY_LIMIT = 200;
@@ -24,6 +25,7 @@ export type DayResult = {
   nothingNew: boolean;
   extractedCount: number;
   dateFoundCount: number;
+  qualityScore: number | null;
 };
 
 export type HistoryDay = {
@@ -33,6 +35,7 @@ export type HistoryDay = {
   nothingNew: boolean;
   extractedCount: number;
   dateRate: number | null;
+  qualityScore: number | null;
 };
 
 export type Judgement = {
@@ -40,6 +43,7 @@ export type Judgement = {
   consecutiveFailedDays: number;
   baselineExtractedCount: number | null;
   baselineDateRate: number | null;
+  baselineQualityScore: number | null;
 };
 
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -64,12 +68,16 @@ export function judgeSource(date: string, today: DayResult | null, history: Hist
   const base = past.filter(comparable);
   const baselineExtractedCount = mean(base.map((h) => h.extractedCount));
   const baselineDateRate = mean(base.map((h) => h.dateRate));
+  const baselineQualityScore = mean(base.map((h) => h.qualityScore));
   const judged = (anomalies: HealthAnomalyKind[], consecutiveFailedDays = 0): Judgement => ({
     anomalies,
     consecutiveFailedDays,
     baselineExtractedCount,
     baselineDateRate,
+    baselineQualityScore,
   });
+  const dropped = (value: number | null, baseline: number | null, by: number) =>
+    value !== null && baseline !== null && baseline - value >= by - 1e-9;
 
   if (today === null) return judged(["no_run"]);
 
@@ -92,10 +100,10 @@ export function judgeSource(date: string, today: DayResult | null, history: Hist
   } else if (baselineExtractedCount !== null && today.extractedCount < baselineExtractedCount * HEALTH_THRESHOLDS.countDropRatio) {
     anomalies.push("event_count_drop");
   }
-  const dateRate = ratio(today.dateFoundCount, today.extractedCount);
-  if (dateRate !== null && baselineDateRate !== null && baselineDateRate - dateRate >= HEALTH_THRESHOLDS.rateDrop - 1e-9) {
+  if (dropped(ratio(today.dateFoundCount, today.extractedCount), baselineDateRate, HEALTH_THRESHOLDS.rateDrop)) {
     anomalies.push("date_rate_drop");
   }
+  if (dropped(today.qualityScore, baselineQualityScore, HEALTH_THRESHOLDS.qualityDrop)) anomalies.push("quality_drop");
   return judged(anomalies);
 }
 
@@ -106,6 +114,7 @@ type LatestRun = {
   nothing_new: number;
   extracted_count: number;
   date_found_count: number;
+  quality_score: number | null;
   error_message: string | null;
 };
 
@@ -122,7 +131,7 @@ export async function writeHealthReport(d1: D1Database, now: Date): Promise<{ da
 
   const since = new Date(now.getTime() - HEALTH_THRESHOLDS.runLookbackHours * HOUR_MS).toISOString();
   const latest = await db.all<LatestRun>(sql`
-    SELECT source_id, id, status, nothing_new, extracted_count, date_found_count, error_message FROM (
+    SELECT source_id, id, status, nothing_new, extracted_count, date_found_count, quality_score, error_message FROM (
       SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id ORDER BY started_at DESC, id DESC) AS rn
       FROM crawl_runs
       WHERE started_at >= ${since} AND started_at <= ${now.toISOString()} AND status <> 'running'
@@ -138,6 +147,7 @@ export async function writeHealthReport(d1: D1Database, now: Date): Promise<{ da
       nothingNew: sourceHealth.nothingNew,
       extractedCount: sourceHealth.extractedCount,
       dateRate: sourceHealth.dateRate,
+      qualityScore: sourceHealth.qualityScore,
     })
     .from(sourceHealth)
     .where(and(gte(sourceHealth.date, addDays(date, -HEALTH_THRESHOLDS.baselineDays)), lt(sourceHealth.date, date)));
@@ -159,6 +169,7 @@ export async function writeHealthReport(d1: D1Database, now: Date): Promise<{ da
           nothingNew: run.nothing_new === 1,
           extractedCount: run.extracted_count,
           dateFoundCount: run.date_found_count,
+          qualityScore: run.quality_score,
         }
       : null;
     const j = judgeSource(date, today, historyBySource.get(sourceId) ?? []);
@@ -182,6 +193,8 @@ export async function writeHealthReport(d1: D1Database, now: Date): Promise<{ da
       dateRate: today && ratio(today.dateFoundCount, today.extractedCount),
       baselineExtractedCount: j.baselineExtractedCount,
       baselineDateRate: j.baselineDateRate,
+      qualityScore: today?.qualityScore ?? null,
+      baselineQualityScore: j.baselineQualityScore,
       consecutiveFailedDays: j.consecutiveFailedDays,
       anomalies: j.anomalies.length > 0 ? j.anomalies : null,
       errorMessage: run?.error_message?.slice(0, MAX_ERROR_MESSAGE_LENGTH) ?? null,
@@ -197,11 +210,12 @@ export async function writeHealthReport(d1: D1Database, now: Date): Promise<{ da
       d1
         .prepare(
           `INSERT INTO source_health (date, source_id, run_id, status, nothing_new, extracted_count, date_found_count,
-             date_rate, baseline_extracted_count, baseline_date_rate, consecutive_failed_days, anomalies, error_message)
+             date_rate, baseline_extracted_count, baseline_date_rate, quality_score, baseline_quality_score,
+             consecutive_failed_days, anomalies, error_message)
            SELECT j.value ->> '$.date', j.value ->> '$.sourceId', j.value ->> '$.runId', j.value ->> '$.status',
              j.value ->> '$.nothingNew', j.value ->> '$.extractedCount', j.value ->> '$.dateFoundCount',
              j.value ->> '$.dateRate', j.value ->> '$.baselineExtractedCount', j.value ->> '$.baselineDateRate',
-             j.value ->> '$.consecutiveFailedDays', j.value ->> '$.anomalies', j.value ->> '$.errorMessage'
+             j.value ->> '$.qualityScore', j.value ->> '$.baselineQualityScore', j.value ->> '$.consecutiveFailedDays', j.value ->> '$.anomalies', j.value ->> '$.errorMessage'
            FROM json_each(?) AS j`,
         )
         .bind(JSON.stringify(chunk)),
@@ -245,6 +259,8 @@ export type SourceAnomaly = {
   dateRate: number | null;
   baselineExtractedCount: number | null;
   baselineDateRate: number | null;
+  qualityScore: number | null;
+  baselineQualityScore: number | null;
   consecutiveFailedDays: number;
   errorMessage: string | null;
 };
@@ -281,6 +297,8 @@ export async function healthReport(
       dateRate: sourceHealth.dateRate,
       baselineExtractedCount: sourceHealth.baselineExtractedCount,
       baselineDateRate: sourceHealth.baselineDateRate,
+      qualityScore: sourceHealth.qualityScore,
+      baselineQualityScore: sourceHealth.baselineQualityScore,
       consecutiveFailedDays: sourceHealth.consecutiveFailedDays,
       errorMessage: sourceHealth.errorMessage,
     })
