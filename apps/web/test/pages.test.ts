@@ -257,6 +257,47 @@ describe("詳細 /events/:id", () => {
   });
 });
 
+describe("見た目", () => {
+  const style = async (path: string) => {
+    const html = await (await get(path)).text();
+    return html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? "";
+  };
+
+  it("OS がダークモードでも明るい配色だけを使う", async () => {
+    const html = await (await get("/")).text();
+    const css = await style("/");
+    expect(css).not.toContain("prefers-color-scheme");
+    expect(css).toMatch(/color-scheme:light[;}]/);
+    expect(html).toMatch(/<meta name="theme-color" content="#[0-9a-f]{6}"/);
+  });
+
+  it("入力欄は 16px 以上にして、タップ時に iOS が拡大しないようにする", async () => {
+    expect(await style("/kagawa")).toMatch(/form\.filter input,form\.filter select\{[^}]*font-size:16px/);
+  });
+
+  it("タップ時のハイライトを消し、ボタンとリンクに押したときの反応を付ける", async () => {
+    const css = await style("/");
+    expect(css).toContain("-webkit-tap-highlight-color:transparent");
+    expect(css).toMatch(/touch-action:manipulation/);
+    expect(css).toMatch(/:active\{/);
+  });
+
+  it("長い英数字の見出し・詳細欄は折り返す", async () => {
+    const css = await style("/events/1");
+    expect(css).toMatch(/h1\{[^}]*overflow-wrap:anywhere/);
+    expect(css).toMatch(/dl\.detail\{[^}]*grid-template-columns:auto minmax\(0,1fr\)/);
+    expect(css).toMatch(/dl\.detail dd\{[^}]*overflow-wrap:anywhere/);
+  });
+
+  it("会場・市区町村が不明でも、一覧の補足行は区切りから始まらない", async () => {
+    const noPlace = ev({ id: 9, city: null, venue: null, startAt: "2026-11-10T10:00", endAt: null });
+    const local = createApp({ repository: () => createMemoryRepository([noPlace]), now });
+    const html = await (await local.request("/kagawa/2026-11-10")).text();
+    const line = html.match(/<div class="muted">([\s\S]*?)<\/div>/)?.[1] ?? "";
+    expect(line).toBe("3〜6歳（保護者同伴） / 無料");
+  });
+});
+
 describe("既存ルート", () => {
   it("/healthz は県名と衝突しない", async () => {
     const res = await get("/healthz");
