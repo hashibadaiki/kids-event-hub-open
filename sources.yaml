@@ -136,3 +136,12 @@ sources:
       status: caution
       checked_at: "2026-11-07"
       note: robots.txt なし（404）。利用規約・サイトポリシーのページが見つからない（プライバシーポリシーのみ）。本文は転載せず要約と元 URL のみ
+  - name: 丸亀市市民交流活動センター マルタス イベント
+    url: https://marugame-marutasu.jp/event/
+    prefecture: 香川県
+    type: html
+    note: 丸亀市の市民交流施設。当月のイベント（約 150 件、MM/DD 表記）を 1 ページに並べる一覧。キッズ（おはなし会・親子あそび・リトミックなど）は約 2 割で、大人向け講座が多い。カテゴリ別の /event/kids/ は過去年も含み年表記がないため使わない
+    policy:
+      status: caution
+      checked_at: "2026-11-07"
+      note: robots.txt なし（404）。サイトポリシー https://marugame-marutasu.jp/privacy/ は私的使用・引用の範囲外の無断複製・転用を不可、リンクはトップへ。自動取得の禁止なし。本文は転載せず要約と元 URL のみ
