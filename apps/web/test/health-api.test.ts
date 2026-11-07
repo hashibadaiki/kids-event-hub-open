@@ -25,13 +25,16 @@ async function seed() {
     )
       .bind(name, `https://example.jp/${name}`)
       .first<{ id: number }>();
-    await env.DB.prepare(
-      "INSERT INTO crawl_runs (source_id, status, started_at, fetched_count, extracted_count, date_found_count, error_message) VALUES (?, ?, '2026-11-06T18:00:00.000Z', 4, 2, 1, ?)",
-    )
-      .bind(src!.id, status, status === "failed" ? "HTTP 503" : null)
-      .run();
+    for (const startedAt of ["2026-11-05T18:00:00.000Z", "2026-11-06T18:00:00.000Z"]) {
+      await env.DB.prepare(
+        "INSERT INTO crawl_runs (source_id, status, started_at, fetched_count, extracted_count, date_found_count, error_message) VALUES (?, ?, ?, 1, 2, 1, ?)",
+      )
+        .bind(src!.id, status, startedAt, status === "failed" ? "HTTP 503" : null)
+        .run();
+    }
   }
-  await writeHealthReport(env.DB, new Date("2026-11-07T03:30:00+09:00"));
+  await writeHealthReport(env.DB, new Date("2026-11-06T06:30:00+09:00"));
+  await writeHealthReport(env.DB, new Date("2026-11-07T06:30:00+09:00"));
 }
 
 describe("GET /api/health", () => {
@@ -51,8 +54,8 @@ describe("GET /api/health", () => {
 
   it("date で日を指定でき、集計がない日は missing", async () => {
     await seed();
-    const body = (await (await app.request("/api/health?date=2026-11-06", {}, env)).json()) as HealthBody;
-    expect(body).toMatchObject({ date: "2026-11-06", status: "missing", report: null, anomalies: [] });
+    const body = (await (await app.request("/api/health?date=2026-11-05", {}, env)).json()) as HealthBody;
+    expect(body).toMatchObject({ date: "2026-11-05", status: "missing", report: null, anomalies: [] });
   });
 
   it.each(["2026-11", "abc", "2026-13-01"])("date が YYYY-MM-DD の日付でなければ 400（%s）", async (v) => {
@@ -97,7 +100,7 @@ describe("MCP の get_health（毎朝の定期チェック用）", () => {
 
   it("date を指定できる。形式が違えばエラー", async () => {
     await seed();
-    const body = (await mcp("tools/call", { name: "get_health", arguments: { date: "2026-11-06" } })).result!.structuredContent!;
+    const body = (await mcp("tools/call", { name: "get_health", arguments: { date: "2026-11-05" } })).result!.structuredContent!;
     expect(body.status).toBe("missing");
     const bad = (await mcp("tools/call", { name: "get_health", arguments: { date: "11/06" } })).result!;
     expect(bad.isError).toBe(true);

@@ -101,7 +101,7 @@ HTML・PDF の抽出には Claude API を使います。本番では `ANTHROPIC_
 クロール結果・抽出品質・自動改善の前後比較は Claude の Dashboard で見ます（管理画面は自作しません）。
 データは MCP の `get_dashboard`（中身は読み取り専用の `GET /api/dashboard` と同じ。認証なし、公開してよい集計のみ）。構成とデモで映す場面は [docs/dashboard.md](./docs/dashboard.md)。
 
-毎朝の定期チェック用に、日次の健全性は MCP の `get_health`（`GET /api/health` と同じ）で読みます。クロールのジョブの最後に、収集元ごとの結果と異常の判定を `health_reports` / `source_health` に保存し、読む側には要約と異常のある収集元だけを返します（収集元が増えてもレスポンスは異常の数でしか増えない）。判定の基準は [docs/health.md](./docs/health.md)。
+毎朝の定期チェック用に、日次の健全性は MCP の `get_health`（`GET /api/health` と同じ）で読みます。06:30 JST の Cron がクロールとは別に、直近 26 時間の各収集元の最後の実行で集計し、異常の判定とあわせて `health_reports` / `source_health` に保存し、読む側には要約と異常のある収集元だけを返します（収集元が増えてもレスポンスは異常の数でしか増えない）。判定の基準は [docs/health.md](./docs/health.md)。
 
 ### 検索サイト
 

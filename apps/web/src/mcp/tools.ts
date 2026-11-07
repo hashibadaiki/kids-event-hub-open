@@ -175,10 +175,11 @@ export const MCP_TOOLS: McpTool[] = [
     name: "get_health",
     title: "クロールの日次の健全性",
     description:
-      "その日（JST）のクロールの要約と、異常のある収集元だけを返す（GET /api/health と同じ内容）。" +
+      "その日（JST。毎朝 06:30 に直近 26 時間の各収集元の最後の実行で集計）のクロールの要約と、異常のある収集元だけを返す（GET /api/health と同じ内容）。" +
       "status は ok（異常なし）/ anomaly（異常あり）/ missing（その日の集計がない。Cron か Worker が止まっている可能性）。" +
-      "異常の種類: no_run（実行されなかった）、failed（失敗。consecutiveFailedDays は連続日数）、zero_events（前回まで取れていたのに 0 件）、" +
-      "date_rate_drop / extraction_rate_drop（日付取得率・抽出成功率が過去の平均から thresholds.rateDrop 以上低下）。",
+      "異常の種類: no_run（直近に実行されなかった）、failed（thresholds.failedDays 日以上続けて失敗。consecutiveFailedDays は連続日数）、" +
+      "zero_events（前回まで取れていたのに 0 件）、event_count_drop（件数が過去の平均の thresholds.countDropRatio 倍未満）、" +
+      "date_rate_drop（日付取得率が過去の平均から thresholds.rateDrop 以上低下）。新しい PDF がなかった実行は件数・率を判定しない。",
     inputSchema: {
       type: "object",
       properties: {

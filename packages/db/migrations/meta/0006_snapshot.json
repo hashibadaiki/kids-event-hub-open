@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f086fb3f-8bb5-4e21-a0fc-a1405aea3e07",
+  "id": "15536c48-c090-43c1-b3a8-6f5708d61712",
   "prevId": "6d91b094-24aa-4267-a33e-f7fd47e67289",
   "tables": {
     "config_evaluations": {
@@ -251,6 +251,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "nothing_new": {
+          "name": "nothing_new",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         }
       },
       "indexes": {
@@ -258,6 +266,13 @@
           "name": "crawl_runs_source_started_idx",
           "columns": [
             "source_id",
+            "started_at"
+          ],
+          "isUnique": false
+        },
+        "crawl_runs_started_idx": {
+          "name": "crawl_runs_started_idx",
+          "columns": [
             "started_at"
           ],
           "isUnique": false
@@ -804,13 +819,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "fetched_count": {
-          "name": "fetched_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "extracted_count": {
           "name": "extracted_count",
           "type": "integer",
@@ -1096,13 +1104,13 @@
           "notNull": false,
           "autoincrement": false
         },
-        "fetched_count": {
-          "name": "fetched_count",
+        "nothing_new": {
+          "name": "nothing_new",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": 0
+          "default": false
         },
         "extracted_count": {
           "name": "extracted_count",
@@ -1120,13 +1128,6 @@
           "autoincrement": false,
           "default": 0
         },
-        "extraction_rate": {
-          "name": "extraction_rate",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "date_rate": {
           "name": "date_rate",
           "type": "real",
@@ -1134,8 +1135,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "baseline_extraction_rate": {
-          "name": "baseline_extraction_rate",
+        "baseline_extracted_count": {
+          "name": "baseline_extracted_count",
           "type": "real",
           "primaryKey": false,
           "notNull": false,
