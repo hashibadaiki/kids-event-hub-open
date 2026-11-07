@@ -145,3 +145,12 @@ sources:
       status: caution
       checked_at: "2026-11-07"
       note: robots.txt なし（404）。サイトポリシー https://marugame-marutasu.jp/privacy/ は私的使用・引用の範囲外の無断複製・転用を不可、リンクはトップへ。自動取得の禁止なし。本文は転載せず要約と元 URL のみ
+  - name: イオンモール倉敷 イベント
+    url: https://kurashiki.aeonmall.jp/event
+    prefecture: 岡山県
+    type: html
+    note: 倉敷市の商業施設。開催中・予告のイベントとセール・キャンペーンが混在する一覧（約 75 件、個別ページ /event/<uuid>）。ショー・撮影会・親子サークルなど子供向けが定期的に載る。他のイオンモールは別サブドメイン
+    policy:
+      status: caution
+      checked_at: "2026-11-07"
+      note: robots.txt は User-agent * に Allow / のみ。利用規約・著作権のページが見つからない（https://www.aeonmall.com/sitepolicy/ は推奨環境のみ、ほかはプライバシーポリシー）。本文は転載せず要約と元 URL のみ
